@@ -1,6 +1,14 @@
 # 数据库设计
 
-SQLite 单文件数据库，路径：`data/stocktools.db`
+SQLite 数据库文件放在 StockTools 工作目录中。
+
+默认工作目录：`~/.stock_tools`
+
+用户可在 `setup.sh` 阶段自定义工作目录。
+
+数据库文件：
+- 主数据库：`<workdir>/database.db`
+- 模型配置数据库：`<workdir>/config.db`
 
 
 ## ER 关系
@@ -13,6 +21,7 @@ watchlist (关注池) ──→ 通过 code 关联行情
 holdings (持仓记录) ──→ 通过 code 关联行情
     ↓ id
 ai_logs (AI分析记录) ──→ 关联持仓或关注池
+model_config (模型配置) ──→ 存储 DeepSeek/OpenAI 兼容配置
 ```
 
 
@@ -21,7 +30,7 @@ ai_logs (AI分析记录) ──→ 关联持仓或关注池
 
 ### daily_kline — 日K线数据
 
-存储全A股历史日K线。`st init` 回填，`st update` 每日追加。
+存储全A股前复权历史日K线。`st init` 回填，`st update` 每日追加。
 
 ```sql
 CREATE TABLE daily_kline (
@@ -45,6 +54,7 @@ CREATE INDEX idx_kline_code ON daily_kline(code);
 - `date` 索引支持按日期范围查询（如 `st update` 检查最新日期）
 - `code` 索引支持按股票查询（如 `st watch` 拉取单只行情）
 - `volume` 用 REAL 而非 INTEGER，因为 baostock 返回的成交量可能含小数
+- 价格统一使用前复权口径
 
 
 ### watchlist — 关注池
@@ -58,13 +68,14 @@ CREATE TABLE watchlist (
     pattern     TEXT,                  -- 识别到的形态：'box_break'/'channel'/'volume_absorb'/'independent'
     note        TEXT,                  -- 用户备注
     added_at    TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),  -- 加入时间
-    buy_tomorrow BOOLEAN NOT NULL DEFAULT FALSE                        -- 是否来到买入时机
+    buy_tomorrow INTEGER NOT NULL DEFAULT 0                            -- 是否标记“明天买”：0/1
 );
 ```
 
 **设计说明：**
 - 一只股票只能出现一次（code 为主键），重复 add 应更新而非报错
-- `pattern` 可为空（用户手动加入时可能不指定形态）
+- `pattern` 由 `st record add` 自动运行各个扫描器后写入；如果没有任何形态符合，可为空
+- `st record go <code>` 将 `buy_tomorrow` 更新为 1
 
 
 ### holdings — 持仓记录
@@ -83,7 +94,6 @@ CREATE TABLE holdings (
     take_profit REAL,                                                    -- 目标价（可后设）
     exit_price  REAL,                                                    -- 卖出价
     exit_date   TEXT,                                                    -- 卖出日期
-    pnl_pct     REAL,                                                    -- 盈亏百分比，平仓时计算
     note        TEXT                                                     -- 备注
 );
 
@@ -94,13 +104,14 @@ CREATE INDEX idx_holdings_code ON holdings(code);
 **设计说明：**
 - 同一只股票允许多次建仓（不同时间段），所以用自增 id 而非 code 作主键
 - `stop_loss` / `take_profit` 初始可为 NULL，通过 `st hold set` 或 `st alert` 后续填入
-- `pnl_pct` 在 `st hold out` 时计算：`(exit_price - entry_price) / entry_price * 100`
+- 不记录盈亏百分比，用户通过自己的交易平台查看盈亏
+- `st hold out <code> --price <卖出价>` 默认关闭该代码下全部 open 持仓；传入 `--dec` 时表示仅减仓，第一版不关闭全部 open 持仓
 - `status` 索引支持快速筛选当前持仓（`WHERE status = 'open'`）
 
 
 ### ai_logs — AI 分析日志
 
-记录每次 DeepSeek API 调用的结果，用于复盘和避免重复调用。
+记录 DeepSeek API 调用结果，用于复盘。`st watch` 可重复运行，同一股票同一天的 watch 结果覆盖旧记录。
 
 ```sql
 CREATE TABLE ai_logs (
@@ -109,7 +120,9 @@ CREATE TABLE ai_logs (
     type        TEXT    NOT NULL,                                        -- 'watch'（买入分析）| 'alert'（卖出分析）
     conclusion  TEXT    NOT NULL,                                        -- AI 结论：'buy'/'hold'/'sell'/'wait'
     content     TEXT    NOT NULL,                                        -- AI 给出的内容
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))  -- 分析时间
+    analysis_date TEXT  NOT NULL DEFAULT (date('now', 'localtime')),     -- 分析日期，用于当天覆盖
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')), -- 分析时间
+    UNIQUE (code, type, analysis_date)
 );
 
 CREATE INDEX idx_ai_logs_code_type ON ai_logs(code, type);
@@ -117,21 +130,40 @@ CREATE INDEX idx_ai_logs_created ON ai_logs(created_at);
 ```
 
 **设计说明：**
-- 每次调用 `st watch` 或 `st alert` 都记录一条，不覆盖历史
+- `content` 存储 AI 输出正文，`conclusion` 存储标准化结论
+- 同一 `code + type + analysis_date` 只保留一条，重复运行时覆盖旧记录
 - `conclusion` 标准化为枚举值，方便程序判断是否需要提醒用户
 - 按 `(code, type)` 索引可快速查询某只股票的分析历史
-- 按 `created_at` 索引支持"今天已分析过则跳过"的去重逻辑
+- 按 `created_at` 索引支持按时间查看分析历史
+
+
+### model_config — 模型配置
+
+存储 OpenAI 兼容模型配置。该表位于 `<workdir>/config.db`。
+
+```sql
+CREATE TABLE model_config (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    base_url    TEXT    NOT NULL,   -- OpenAI 兼容接口地址，如 DeepSeek base url
+    api_key     TEXT    NOT NULL,   -- API Key
+    model_name  TEXT    NOT NULL    -- 模型名称
+);
+```
+
+**设计说明：**
+- 只保存一组当前生效的模型配置，所以固定 `id = 1`
+- `setup.sh` 或后续配置命令负责写入/更新该表
 
 
 ## 约束与规范
 
 | 规范 | 说明 |
 |------|------|
-| 代码格式 | 纯6位数字，如 `'000001'`、`'600519'`。不带市场前缀（baostock 的 `sh.`/`sz.` 在入库时剥离） |
+| 代码格式 | 纯6位数字，如 `'000001'`、`'600519'`。CLI 只接受纯 6 位数字；数据源返回的市场前缀在入库时剥离 |
 | 日期格式 | ISO 8601：`'YYYY-MM-DD'`（date）或 `'YYYY-MM-DD HH:MM:SS'`（datetime） |
 | 事务 | 批量写入使用事务包裹，`st init` 每100只股票 commit 一次防止内存溢出 |
 | WAL 模式 | 启用 `PRAGMA journal_mode=WAL`，允许读写并发（cron update 和手动查询可能同时发生） |
-| 文件位置 | `data/stocktools.db`，纳入 `.gitignore` |
+| 文件位置 | 默认 `~/.stock_tools/database.db` 和 `~/.stock_tools/config.db`；用户可通过 `setup.sh` 自定义工作目录 |
 
 
 ## 初始化 SQL
@@ -160,7 +192,8 @@ CREATE TABLE IF NOT EXISTS watchlist (
     name        TEXT    NOT NULL,
     pattern     TEXT,
     note        TEXT,
-    added_at    TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
+    added_at    TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
+    buy_tomorrow INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS holdings (
@@ -174,7 +207,6 @@ CREATE TABLE IF NOT EXISTS holdings (
     take_profit REAL,
     exit_price  REAL,
     exit_date   TEXT,
-    pnl_pct     REAL,
     note        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_holdings_status ON holdings(status);
@@ -185,9 +217,22 @@ CREATE TABLE IF NOT EXISTS ai_logs (
     code        TEXT    NOT NULL,
     type        TEXT    NOT NULL,
     conclusion  TEXT    NOT NULL,
-    reason      TEXT    NOT NULL,
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
+    content     TEXT    NOT NULL,
+    analysis_date TEXT  NOT NULL DEFAULT (date('now', 'localtime')),
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE (code, type, analysis_date)
 );
 CREATE INDEX IF NOT EXISTS idx_ai_logs_code_type ON ai_logs(code, type);
 CREATE INDEX IF NOT EXISTS idx_ai_logs_created ON ai_logs(created_at);
+```
+
+`config.db` 初始化 SQL：
+
+```sql
+CREATE TABLE IF NOT EXISTS model_config (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    base_url    TEXT    NOT NULL,
+    api_key     TEXT    NOT NULL,
+    model_name  TEXT    NOT NULL
+);
 ```
