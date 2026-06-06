@@ -112,7 +112,7 @@ service 层返回结构化结果，不直接打印。
 | `base.py` | 抽象基类 `BaseScanner`，定义 `detect(df, **kwargs) -> ScanResult` |
 | `registry.py` | 扫描器注册表，通过名称字符串获取 scanner 类 |
 | `results.py` | 定义 `ScanResult` 数据结构 |
-| `box_break.py` | 低位箱体突破形态识别 |
+| `box.py` | 低位箱体整理形态识别 |
 | `channel.py` | 上升通道形态识别 |
 | `volume_absorb.py` | 爆量吸筹形态识别 |
 | `independent.py` | 独立行情形态识别 |
@@ -274,7 +274,7 @@ StockTools/
     │   ├── base.py
     │   ├── registry.py
     │   ├── results.py
-    │   ├── box_break.py
+    │   ├── box.py
     │   ├── channel.py
     │   ├── volume_absorb.py
     │   └── independent.py

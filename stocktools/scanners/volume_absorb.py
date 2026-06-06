@@ -8,41 +8,61 @@ from .results import ScanResult
 from .utils import normalize_df
 
 
+DEFAULTS = {
+    "lookback": 5,
+    "baseline_days": 60,
+    "vol_spike_min": 2.0,
+    "min_spike_days": 1,
+    "max_gain": 0.20,
+}
+
+
 class VolumeAbsorbScanner(BaseScanner):
     name = "volume_absorb"
     label = "爆量吸筹"
 
     def detect(self, df: pd.DataFrame, **kwargs) -> ScanResult:
-        vol_ratio_min = float(kwargs.get("vol_ratio_min", 1.8))
-        range_max = float(kwargs.get("range_max", 0.25))
-        support_lift_min = float(kwargs.get("support_lift_min", 0.08))
+        p = {**DEFAULTS, **kwargs}
         data = normalize_df(df)
-        if len(data) < 80:
+        required = p["baseline_days"] + p["lookback"]
+        if len(data) < required:
             return ScanResult(False, self.name)
-        recent = data.tail(20)
-        prev = data.iloc[-80:-20]
-        recent_avg = float(recent["volume"].mean())
-        prev_avg = float(prev["volume"].mean())
-        if prev_avg <= 0:
+
+        recent = data.tail(p["lookback"])
+        baseline = data.iloc[-(p["baseline_days"] + p["lookback"]):-p["lookback"]]
+        baseline_avg = float(baseline["volume"].mean())
+        if baseline_avg <= 0:
             return ScanResult(False, self.name)
-        vol_ratio = recent_avg / prev_avg
-        high = float(recent["high"].max())
-        low = float(recent["low"].min())
-        price_range = (high - low) / low if low > 0 else 999
-        support_low = float(data.tail(60)["low"].min())
-        latest = float(data.iloc[-1]["close"])
-        support_lift = (latest - support_low) / support_low if support_low > 0 else 0
-        up_vol = recent.loc[recent["close"] >= recent["open"], "volume"]
-        down_vol = recent.loc[recent["close"] < recent["open"], "volume"]
-        up_down_ratio = float(up_vol.mean() / down_vol.mean()) if len(up_vol) and len(down_vol) else 1.0
-        matched = vol_ratio >= vol_ratio_min and price_range <= range_max and support_lift >= support_lift_min and up_down_ratio >= 1.0
+
+        spike_days = recent[
+            (recent["volume"] >= baseline_avg * p["vol_spike_min"])
+            & (recent["close"] > recent["open"])
+        ]
+
+        if len(spike_days) < p["min_spike_days"]:
+            return ScanResult(False, self.name)
+
+        first_spike_idx = spike_days.index[0]
+        pos_in_data = data.index.get_loc(first_spike_idx)
+        price_before = float(data.iloc[pos_in_data - 1]["close"]) if pos_in_data > 0 else float(spike_days.iloc[0]["open"])
+        latest_close = float(data.iloc[-1]["close"])
+        gain = (latest_close - price_before) / price_before if price_before > 0 else 0
+
+        if gain <= 0 or gain > p["max_gain"]:
+            return ScanResult(False, self.name)
+
+        max_vol_ratio = float(spike_days["volume"].max() / baseline_avg)
+        avg_spike_ratio = float(spike_days["volume"].mean() / baseline_avg)
+
+        score = avg_spike_ratio * 25 + len(spike_days) * 15 + gain * 100
+
         indicators = {
-            "price": round(latest, 2),
-            "vol_ratio": round(vol_ratio, 2),
-            "range_pct": round(price_range * 100, 1),
-            "support_lift_pct": round(support_lift * 100, 1),
-            "up_down_vol_ratio": round(up_down_ratio, 2),
-            "score": round(vol_ratio * 20 + max(0, range_max - price_range) * 100 + support_lift * 50, 1),
+            "price": round(latest_close, 2),
+            "gain_pct": round(gain * 100, 1),
+            "spike_days": int(len(spike_days)),
+            "max_vol_ratio": round(max_vol_ratio, 2),
+            "avg_spike_ratio": round(avg_spike_ratio, 2),
+            "score": round(score, 1),
         }
-        return ScanResult(matched, self.name, indicators if matched else {})
+        return ScanResult(True, self.name, indicators)
 

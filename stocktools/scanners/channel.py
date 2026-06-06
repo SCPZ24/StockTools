@@ -12,12 +12,12 @@ DEFAULTS = {
     "min_weeks": 10,
     "max_weeks": 52,
     "slope_min": 0.002,
-    "slope_max": 0.02,
+    "slope_max": 0.03,
     "width_min": 0.08,
     "width_max": 0.35,
-    "r_squared_min": 0.75,
+    "r_squared_min": 0.60,
     "parallelism": 0.5,
-    "position_max": 0.5,
+    "position_max": 0.6,
     "zigzag_pct": 0.05,
 }
 

@@ -20,6 +20,8 @@ def register(subparsers) -> None:
     set_cmd.add_argument("hh", type=int)
     set_cmd.add_argument("mm", type=int)
     set_cmd.set_defaults(func=handle_cron_set)
+    remove_cmd = actions.add_parser("remove")
+    remove_cmd.set_defaults(func=handle_cron_remove)
 
 
 def handle_init(args: argparse.Namespace) -> int:
@@ -42,3 +44,8 @@ def handle_cron_set(args: argparse.Namespace) -> int:
     print(f"已设置每日 {args.hh:02d}:{args.mm:02d} 自动更新。")
     return 0
 
+
+def handle_cron_remove(args: argparse.Namespace) -> int:
+    removed = CronService().remove()
+    print("已移除 StockTools 自动更新 cron。" if removed else "没有找到 StockTools 自动更新 cron。")
+    return 0

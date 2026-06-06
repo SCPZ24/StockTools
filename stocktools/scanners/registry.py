@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from .base import BaseScanner
-from .box_break import BoxBreakScanner
+from .box import BoxScanner
 from .channel import ChannelScanner
 from .independent import IndependentScanner
 from .volume_absorb import VolumeAbsorbScanner
 
 
 SCANNER_CLASSES: dict[str, type[BaseScanner]] = {
-    "box_break": BoxBreakScanner,
+    "box": BoxScanner,
     "channel": ChannelScanner,
     "volume_absorb": VolumeAbsorbScanner,
     "independent": IndependentScanner,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from .base import BaseScanner
@@ -7,38 +8,69 @@ from .results import ScanResult
 from .utils import max_drawdown, normalize_df
 
 
+DEFAULTS = {
+    "min_days": 60,
+    "excess_return_min": 0.15,
+    "drawdown_max": 0.25,
+    "vol_shrink_max": 0.80,
+    "segment_positive": True,
+    "baseline_return": 0.0,
+}
+
+
 class IndependentScanner(BaseScanner):
     name = "independent"
     label = "独立行情"
 
     def detect(self, df: pd.DataFrame, **kwargs) -> ScanResult:
-        excess_return_min = float(kwargs.get("excess_return_min", 0.15))
-        drawdown_max = float(kwargs.get("drawdown_max", 0.25))
-        recent_return_min = float(kwargs.get("recent_return_min", 0.0))
-        baseline_return = float(kwargs.get("baseline_return", 0.0))
+        p = {**DEFAULTS, **kwargs}
         data = normalize_df(df)
-        if len(data) < 120:
+        min_days = int(p["min_days"])
+        if len(data) < min_days + 60:
             return ScanResult(False, self.name)
-        last60 = data.tail(60)
-        last20 = data.tail(20)
-        start60 = float(last60.iloc[0]["close"])
-        start20 = float(last20.iloc[0]["close"])
-        latest = float(data.iloc[-1]["close"])
-        if start60 <= 0 or start20 <= 0:
+
+        recent = data.tail(min_days)
+        closes = recent["close"].values
+        volumes = recent["volume"].values
+
+        start_price = float(closes[0])
+        latest_price = float(closes[-1])
+        if start_price <= 0:
             return ScanResult(False, self.name)
-        ret60 = latest / start60 - 1
-        ret20 = latest / start20 - 1
-        excess = ret60 - baseline_return
-        dd = max_drawdown(last60["close"].values)
-        matched = excess >= excess_return_min and dd <= drawdown_max and ret20 >= recent_return_min
+
+        total_return = latest_price / start_price - 1
+        excess = total_return - float(p["baseline_return"])
+        if excess < float(p["excess_return_min"]):
+            return ScanResult(False, self.name)
+
+        dd = max_drawdown(closes)
+        if dd > float(p["drawdown_max"]):
+            return ScanResult(False, self.name)
+
+        seg_len = min_days // 3
+        if p["segment_positive"]:
+            for i in range(3):
+                seg = closes[i * seg_len : (i + 1) * seg_len]
+                if float(seg[-1]) <= float(seg[0]):
+                    return ScanResult(False, self.name)
+
+        recent_vol = float(np.mean(volumes[-20:]))
+        prior_vol = float(np.mean(volumes[:-20]))
+        if prior_vol <= 0:
+            return ScanResult(False, self.name)
+        vol_ratio = recent_vol / prior_vol
+        if vol_ratio > float(p["vol_shrink_max"]):
+            return ScanResult(False, self.name)
+
+        score = excess * 100 - dd * 30 + (1 - vol_ratio) * 50
+
         indicators = {
-            "price": round(latest, 2),
-            "return_60d_pct": round(ret60 * 100, 1),
-            "baseline_return_pct": round(baseline_return * 100, 1),
+            "price": round(latest_price, 2),
+            "return_60d_pct": round(total_return * 100, 1),
             "excess_return_pct": round(excess * 100, 1),
-            "return_20d_pct": round(ret20 * 100, 1),
             "max_drawdown_pct": round(dd * 100, 1),
-            "score": round(excess * 100 - dd * 30 + ret20 * 20, 1),
+            "vol_shrink_ratio": round(vol_ratio, 2),
+            "score": round(score, 1),
         }
-        return ScanResult(matched, self.name, indicators if matched else {})
+        return ScanResult(True, self.name, indicators)
 

@@ -28,6 +28,10 @@ def _strip_block(text: str) -> str:
     return "\n".join(out).strip()
 
 
+def has_stocktools_cron() -> bool:
+    return BEGIN in _read_crontab()
+
+
 def set_stocktools_cron(hour: int, minute: int, command: str) -> None:
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
         raise ValueError("cron 时间必须在 00:00 到 23:59 之间")
@@ -36,3 +40,12 @@ def set_stocktools_cron(hour: int, minute: int, command: str) -> None:
     new_text = f"{current}\n{block}\n" if current else f"{block}\n"
     subprocess.run(["crontab", "-"], input=new_text, text=True, check=True)
 
+
+def remove_stocktools_cron() -> bool:
+    current = _read_crontab()
+    if BEGIN not in current:
+        return False
+    stripped = _strip_block(current)
+    new_text = f"{stripped}\n" if stripped else ""
+    subprocess.run(["crontab", "-"], input=new_text, text=True, check=True)
+    return True

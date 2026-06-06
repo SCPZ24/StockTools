@@ -13,16 +13,18 @@ DEFAULTS = {
     "max_weeks": 40,
     "height_min": 0.06,
     "height_max": 0.45,
-    "min_touches": 1,
+    "min_touches": 2,
+    "touch_tolerance": 0.03,
     "decline_min": 0.08,
     "position_min": 0.45,
     "vol_ratio_min": 0.6,
+    "containment_min": 0.75,
 }
 
 
-class BoxBreakScanner(BaseScanner):
-    name = "box_break"
-    label = "低位箱体突破"
+class BoxScanner(BaseScanner):
+    name = "box"
+    label = "低位箱体整理"
 
     def detect(self, df: pd.DataFrame, **kwargs) -> ScanResult:
         p = {**DEFAULTS, **kwargs}
@@ -44,27 +46,41 @@ class BoxBreakScanner(BaseScanner):
                 box_len = end_idx - start_idx + 1
                 seg_high = highs[start_idx : end_idx + 1]
                 seg_low = lows[start_idx : end_idx + 1]
-                box_top = float(np.max(seg_high))
-                box_bottom = float(np.min(seg_low))
+                seg_close = closes[start_idx : end_idx + 1]
+
+                box_top = float(np.percentile(seg_high, 95))
+                box_bottom = float(np.percentile(seg_low, 5))
                 if box_bottom <= 0 or box_top <= box_bottom:
                     continue
                 height = (box_top - box_bottom) / box_bottom
                 if not (p["height_min"] <= height <= p["height_max"]):
                     continue
-                top_touches = int(np.sum(seg_high >= box_top * 0.98))
-                bot_touches = int(np.sum(seg_low <= box_bottom * 1.02))
+
+                tol = p["touch_tolerance"]
+                top_touches = int(np.sum(seg_high >= box_top * (1 - tol)))
+                bot_touches = int(np.sum(seg_low <= box_bottom * (1 + tol)))
                 if top_touches < p["min_touches"] or bot_touches < p["min_touches"]:
                     continue
-                cur = float(closes[end_idx])
-                pos = (cur - box_bottom) / (box_top - box_bottom)
-                if pos < p["position_min"]:
+
+                contained = int(np.sum((seg_close >= box_bottom * (1 - tol)) & (seg_close <= box_top * (1 + tol))))
+                containment = contained / box_len
+                if containment < p["containment_min"]:
                     continue
+
                 decline = 0.0
                 if start_idx > 0:
                     prior = closes[max(0, start_idx - p["min_weeks"]) : start_idx]
                     if len(prior) >= 4:
                         peak = float(np.max(prior))
                         decline = (peak - box_bottom) / peak if peak > 0 else 0.0
+                if decline < p["decline_min"] and start_idx > 0:
+                    continue
+
+                cur = float(closes[end_idx])
+                pos = (cur - box_bottom) / (box_top - box_bottom)
+                if pos < p["position_min"]:
+                    continue
+
                 yang_vol, yin_vol = [], []
                 for i in range(start_idx, end_idx + 1):
                     row = data.iloc[i]
@@ -75,7 +91,15 @@ class BoxBreakScanner(BaseScanner):
                 vr = float(np.mean(yang_vol) / np.mean(yin_vol)) if yang_vol and yin_vol else 1.0
                 if vr < p["vol_ratio_min"]:
                     continue
-                score = pos * 30 + min(top_touches + bot_touches, 8) * 5 + max(0, 30 - abs(box_len - 16)) * 1.5 + min(vr, 2.0) * 10 + min(decline, 0.5) * 40
+
+                score = (
+                    pos * 30
+                    + min(top_touches + bot_touches, 8) * 5
+                    + max(0, 30 - abs(box_len - 16)) * 1.5
+                    + min(vr, 2.0) * 10
+                    + min(decline, 0.5) * 40
+                    + containment * 20
+                )
                 if score > best_score:
                     best_score = score
                     best = {
@@ -87,6 +111,7 @@ class BoxBreakScanner(BaseScanner):
                         "weeks": box_len,
                         "top_touches": top_touches,
                         "bottom_touches": bot_touches,
+                        "containment_pct": round(containment * 100, 1),
                         "vol_ratio": round(vr, 2),
                         "decline_pct": round(decline * 100, 1),
                         "score": round(score, 1),
@@ -96,4 +121,3 @@ class BoxBreakScanner(BaseScanner):
             if best:
                 break
         return ScanResult(bool(best), self.name, best or {})
-

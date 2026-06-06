@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import sqlite3
-import sys
 import types
 from datetime import date, timedelta
 from pathlib import Path
@@ -10,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 from stocktools.config.model_config_repo import ModelConfigRepo
+import stocktools.ai.client as ai_client
 from stocktools.ai.client import LLMClient
 from stocktools.data.repos.ai_logs_repo import AiLogsRepo
 from stocktools.data.repos.holdings_repo import HoldingsRepo
@@ -196,8 +196,7 @@ def test_llm_client_invokes_openai_compatible_non_streaming_api(tmp_path: Path, 
             captured["client"] = kwargs
             self.chat = types.SimpleNamespace(completions=FakeCompletions())
 
-    fake_module = types.SimpleNamespace(OpenAI=FakeOpenAI)
-    monkeypatch.setitem(sys.modules, "openai", fake_module)
+    monkeypatch.setattr(ai_client, "OpenAI", FakeOpenAI)
 
     content = LLMClient(paths.config_path).invoke([{"role": "user", "content": "hi"}], temperature=0.1)
 

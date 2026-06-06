@@ -60,6 +60,13 @@ def test_all_documented_command_groups_expose_help(tmp_path: Path):
         ["init", "--help"],
         ["update", "--help"],
         ["cron", "set", "--help"],
+        ["cron", "remove", "--help"],
+        ["config", "--help"],
+        ["config", "model", "--help"],
+        ["config", "model", "set", "--help"],
+        ["config", "model", "show", "--help"],
+        ["config", "add", "model", "--help"],
+        ["config", "show", "model", "--help"],
         ["find", "--help"],
         ["record", "--help"],
         ["record", "add", "--help"],
@@ -123,6 +130,55 @@ def test_cli_record_hold_find_csv_and_code_validation(tmp_path: Path):
     assert scan_csv.exists()
 
 
+def test_cli_config_model_set_and_show(tmp_path: Path):
+    home = tmp_path / "work"
+    seed_workdir(home)
+
+    set_result = run_cli(
+        [
+            "config",
+            "model",
+            "set",
+            "--base-url",
+            "https://api.example.com",
+            "--api-key",
+            "secret",
+            "--model-name",
+            "deepseek-chat",
+        ],
+        home,
+    )
+    assert set_result.returncode == 0, set_result.stderr
+    assert "模型配置已保存" in set_result.stdout
+
+    show_result = run_cli(["config", "model", "show"], home)
+    assert show_result.returncode == 0
+    assert "https://api.example.com" in show_result.stdout
+    assert "deepseek-chat" in show_result.stdout
+    assert "secret" not in show_result.stdout
+    assert "******" in show_result.stdout
+
+    alias_set = run_cli(
+        [
+            "config",
+            "add",
+            "model",
+            "--base-url",
+            "https://api2.example.com",
+            "--api-key",
+            "secret2",
+            "--model-name",
+            "model-b",
+        ],
+        home,
+    )
+    assert alias_set.returncode == 0, alias_set.stderr
+    alias_show = run_cli(["config", "show", "model"], home)
+    assert alias_show.returncode == 0
+    assert "https://api2.example.com" in alias_show.stdout
+    assert "model-b" in alias_show.stdout
+
+
 def test_setup_initializes_databases_and_shell_config_without_cron(tmp_path: Path):
     home = tmp_path / "home"
     home.mkdir()
@@ -150,4 +206,3 @@ def test_setup_initializes_databases_and_shell_config_without_cron(tmp_path: Pat
     config = sqlite3.connect(workdir / "config.db")
     config_tables = {row[0] for row in config.execute("select name from sqlite_master where type='table'")}
     assert "model_config" in config_tables
-

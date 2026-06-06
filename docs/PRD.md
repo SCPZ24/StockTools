@@ -52,7 +52,7 @@ StockTools（命令行名：`st`）是一个面向 A 股中长线投资者的终
 
 | 命令 | 说明 |
 |------|------|
-| `st find box_break` | 低位箱体突破扫描 |
+| `st find box` | 低位箱体整理扫描 |
 | `st find channel` | 上升通道扫描 |
 | `st find volume_absorb` | 爆量吸筹扫描 |
 | `st find independent` | 独立行情扫描 |
@@ -279,7 +279,7 @@ CREATE TABLE model_config (
 | 阶段 | 内容 | 交付物 |
 |------|------|--------|
 | M1 | setup + 数据库初始化 + CLI 骨架 + 数据更新 | `setup.sh` / `st init` / `st update` / `st cron set` 可用 |
-| M2 | 基础扫描闭环 | `st find box_break` / `st find channel` 可用，扫描器通过 service 批量执行 |
+| M2 | 基础扫描闭环 | `st find box` / `st find channel` 可用，扫描器通过 service 批量执行 |
 | M3 | 关注池 + 持仓管理 | `st record` + `st hold in/out/list/history` 可用 |
 | M4 | DeepSeek 集成 | `st watch` + `st alert` 可用，AI 结果写入 `ai_logs` |
 | M5 | 补齐扫描器 | `st find volume_absorb` + `st find independent` 可用 |
