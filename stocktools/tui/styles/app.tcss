@@ -1,0 +1,235 @@
+/* ── StockTools TUI Theme ─────────────────────────────── */
+/* Palette: Catppuccin Mocha-inspired dark theme           */
+/*   surface:   #1e1e2e    base:      #181825              */
+/*   text:      #cdd6f4    subtext:   #6c7086              */
+/*   border:    #45475a    accent:    #89b4fa              */
+/*   orange:    #fab387    red:       #f38ba8              */
+/*   green:     #a6e3a1    yellow:    #f9e2af              */
+
+Screen {
+    background: #1e1e2e;
+    color: #cdd6f4;
+}
+
+/* ── Header hint bar ──────────────────────────────────── */
+
+#hint-bar {
+    dock: top;
+    height: 1;
+    background: #181825;
+    color: #6c7086;
+    padding: 0 1;
+}
+
+#hint-bar .hint-key {
+    color: #89b4fa;
+    text-style: bold;
+}
+
+/* ── Tab bar ──────────────────────────────────────────── */
+
+#tab-bar {
+    dock: top;
+    height: 1;
+    background: #181825;
+    padding: 0 1;
+}
+
+.tab-label {
+    padding: 0 2;
+    color: #6c7086;
+}
+
+.tab-label.active {
+    color: #89b4fa;
+    text-style: bold;
+}
+
+/* ── Status bar ───────────────────────────────────────── */
+
+#status-bar {
+    dock: bottom;
+    height: 1;
+    background: #181825;
+    color: #6c7086;
+    padding: 0 1;
+}
+
+/* ── Main content area ────────────────────────────────── */
+
+#content {
+    layout: horizontal;
+}
+
+#left-panel {
+    width: 1fr;
+    min-width: 24;
+    max-width: 40;
+    border-right: solid #45475a;
+}
+
+#right-panel {
+    width: 3fr;
+    padding: 1 2;
+}
+
+/* ── DataTable styling ────────────────────────────────── */
+
+DataTable {
+    height: 1fr;
+}
+
+DataTable > .datatable--header {
+    background: #181825;
+    color: #89b4fa;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor {
+    background: #313244;
+    color: #cdd6f4;
+}
+
+DataTable > .datatable--hover {
+    background: #27273a;
+}
+
+/* ── Detail panel ─────────────────────────────────────── */
+
+.detail-section {
+    margin-bottom: 1;
+}
+
+.detail-label {
+    color: #6c7086;
+    text-style: dim;
+}
+
+.detail-value {
+    color: #cdd6f4;
+}
+
+.detail-title {
+    color: #89b4fa;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* ── AI conclusion colors ─────────────────────────────── */
+
+.conclusion-buy {
+    color: #f38ba8;
+    text-style: bold;
+}
+
+.conclusion-sell {
+    color: #a6e3a1;
+    text-style: bold;
+}
+
+.conclusion-hold {
+    color: #f9e2af;
+    text-style: bold;
+}
+
+.conclusion-wait {
+    color: #6c7086;
+    text-style: bold;
+}
+
+/* ── Buy-tomorrow highlight ───────────────────────────── */
+
+.buy-tomorrow {
+    color: #fab387;
+}
+
+/* ── Loading indicator ────────────────────────────────── */
+
+.loading {
+    color: #6c7086;
+    text-style: italic;
+}
+
+/* ── Scanner selector ─────────────────────────────────── */
+
+#scanner-selector {
+    height: 3;
+    padding: 0 1;
+    border-bottom: solid #45475a;
+}
+
+.scanner-btn {
+    margin: 0 1;
+    min-width: 14;
+    background: #181825;
+    color: #6c7086;
+    border: solid #45475a;
+}
+
+.scanner-btn:hover {
+    background: #313244;
+}
+
+.scanner-btn.selected {
+    background: #313244;
+    color: #89b4fa;
+    border: solid #89b4fa;
+    text-style: bold;
+}
+
+/* ── Input modal ──────────────────────────────────────── */
+
+InputModal {
+    align: center middle;
+}
+
+#modal-container {
+    width: 50;
+    max-width: 80%;
+    height: auto;
+    max-height: 12;
+    background: #1e1e2e;
+    border: round #89b4fa;
+    padding: 1 2;
+}
+
+#modal-title {
+    text-align: center;
+    color: #89b4fa;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#modal-input {
+    width: 100%;
+    margin-bottom: 1;
+}
+
+#modal-error {
+    color: #f38ba8;
+    text-align: center;
+    height: 1;
+}
+
+/* ── History modal ────────────────────────────────────── */
+
+HistoryModal {
+    align: center middle;
+}
+
+#history-container {
+    width: 80;
+    max-width: 90%;
+    height: 24;
+    max-height: 80%;
+    background: #1e1e2e;
+    border: round #89b4fa;
+    padding: 1 2;
+}
+
+#history-title {
+    text-align: center;
+    color: #89b4fa;
+    text-style: bold;
+    margin-bottom: 1;
+}

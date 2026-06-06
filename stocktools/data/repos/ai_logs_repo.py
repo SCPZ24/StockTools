@@ -41,3 +41,11 @@ class AiLogsRepo:
             ).fetchone()
         return dict(row) if row else None
 
+    def get_recent(self, code: str, type_: str, limit: int = 3) -> list[dict]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT * FROM ai_logs WHERE code = ? AND type = ? ORDER BY analysis_date DESC, created_at DESC LIMIT ?",
+                (code, type_, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
