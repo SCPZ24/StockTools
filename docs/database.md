@@ -6,6 +6,11 @@ SQLite 数据库文件放在 StockTools 工作目录中。
 
 用户可在 `setup.sh` 阶段自定义工作目录。
 
+工作目录发现顺序：
+1. `STOCKTOOLS_HOME` 环境变量
+2. `~/.stock_tools_path`
+3. 默认 `~/.stock_tools`
+
 数据库文件：
 - 主数据库：`<workdir>/database.db`
 - 模型配置数据库：`<workdir>/config.db`
@@ -105,7 +110,7 @@ CREATE INDEX idx_holdings_code ON holdings(code);
 - 同一只股票允许多次建仓（不同时间段），所以用自增 id 而非 code 作主键
 - `stop_loss` / `take_profit` 初始可为 NULL，通过 `st hold set` 或 `st alert` 后续填入
 - 不记录盈亏百分比，用户通过自己的交易平台查看盈亏
-- `st hold out <code> --price <卖出价>` 默认关闭该代码下全部 open 持仓；传入 `--dec` 时表示仅减仓，第一版不关闭全部 open 持仓
+- `st hold out <code> --price <卖出价>` 默认关闭该代码下全部 open 持仓；传入 `--dec` 时表示发生减仓操作，不关闭全部 open 持仓，不记录减仓数量，只记录一次操作/备注
 - `status` 索引支持快速筛选当前持仓（`WHERE status = 'open'`）
 
 
@@ -152,7 +157,7 @@ CREATE TABLE model_config (
 
 **设计说明：**
 - 只保存一组当前生效的模型配置，所以固定 `id = 1`
-- `setup.sh` 或后续配置命令负责写入/更新该表
+- `setup.sh` 或后续配置命令负责写入/更新该表。`setup.sh` 写入前需要先判断是否已有记录，已有则询问是否覆盖，默认不覆盖。
 
 
 ## 约束与规范
@@ -168,7 +173,7 @@ CREATE TABLE model_config (
 
 ## 初始化 SQL
 
-`st init` 执行时完整运行以下脚本：
+`setup.sh` 初始化 `<workdir>/database.db` 时完整运行以下脚本。创建前需要先判断数据库文件是否存在；如果已存在，只补齐缺失表，不覆盖已有数据。
 
 ```sql
 PRAGMA journal_mode=WAL;
@@ -226,7 +231,7 @@ CREATE INDEX IF NOT EXISTS idx_ai_logs_code_type ON ai_logs(code, type);
 CREATE INDEX IF NOT EXISTS idx_ai_logs_created ON ai_logs(created_at);
 ```
 
-`config.db` 初始化 SQL：
+`setup.sh` 初始化 `<workdir>/config.db` 时完整运行以下脚本。创建前需要先判断数据库文件是否存在；如果已存在，只补齐缺失表，不覆盖已有数据。
 
 ```sql
 CREATE TABLE IF NOT EXISTS model_config (

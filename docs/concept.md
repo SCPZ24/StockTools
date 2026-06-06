@@ -54,8 +54,10 @@
 
 不是 Web，是 CLI + TUI 混合的形式；第一版先只实现 CLI 指令，TUI 后置。
 
-这是一个终端项目。`setup.sh` 会引导用户把 `st` 指令写入 `~/.zshrc` 或 `~/.bashrc`，并创建工作目录。默认工作目录为 `~/.stock_tools`，用户也可以在 setup 阶段自定义。
+这是一个终端项目。`setup.sh` 会引导用户把 `st` 指令写入 `~/.zshrc` 或 `~/.bashrc`，创建工作目录，初始化 `database.db` / `config.db`，并引导配置 cron。默认工作目录为 `~/.stock_tools`，用户也可以在 setup 阶段自定义。
 
 数据持久化放在工作目录内：
 - 行情、关注池、持仓、AI 日志：`<workdir>/database.db`
 - 模型配置：`<workdir>/config.db`
+
+`setup.sh` 只负责本机环境和数据库结构准备；`st init` 只负责抓取初始化行情数据。

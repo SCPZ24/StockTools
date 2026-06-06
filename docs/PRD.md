@@ -9,11 +9,12 @@ StockTools（命令行名：`st`）是一个面向 A 股中长线投资者的终
 数据持久化使用 SQLite。
 
 运行方式：
-- 项目提供 `setup.sh`，用于创建工作目录、写入 shell 配置、配置 cron。
+- 项目提供 `setup.sh`，用于创建工作目录、写入 shell 配置、初始化数据库、配置 cron。
 - `setup.sh` 会把 `st` 指令写入 `~/.zshrc` 或 `~/.bashrc`，简化用户调用。
 - 默认工作目录为 `~/.stock_tools`，用户可在 setup 阶段自定义。
 - 主数据库路径为 `<workdir>/database.db`。
 - 模型配置数据库路径为 `<workdir>/config.db`。
+- 工作目录发现顺序：`STOCKTOOLS_HOME` 环境变量 > `~/.stock_tools_path` > 默认 `~/.stock_tools`。
 
 
 ## 2. 用户画像
@@ -30,12 +31,14 @@ StockTools（命令行名：`st`）是一个面向 A 股中长线投资者的终
 
 | 命令 | 说明 |
 |------|------|
-| `setup.sh` | 初始化工作目录、写入 shell 配置、引导配置 cron |
-| `st init` | 首次初始化：从 baostock 拉取全A过去1年日K数据入库 |
+| `setup.sh` | 初始化工作目录、写入 shell 配置、初始化 `database.db` / `config.db`、引导配置 cron |
+| `st init` | 从 baostock 拉取全A过去1年日K数据入库 |
 | `st update` | 每日增量：从 akshare 拉取当日全市场数据追加入库 |
 | `st cron set <hh> <mm>` | 设置每日自动执行 `st update` 的 cron 时间 |
 
-- `st init` 只需执行一次，后续用 `st update` 保持数据最新。init的同时也会创建其他表，相当于项目setup。
+- `setup.sh` 和 `st init` 职责分离：`setup.sh` 负责本机环境和数据库表结构初始化，`st init` 只负责抓取初始化行情数据。
+- `setup.sh` 每创建一个配置、文件或 cron 项前，都必须先判断是否已经存在；如果已经存在，则跳过该 setup 步骤，进入下一步。
+- `st init` 只需执行一次，后续用 `st update` 保持数据最新。
 - `setup.sh` 会引导用户配置 cron：默认每天 15:05 执行 `st update`，用户也可以选择不配置 cron。
 - `st cron set <hh> <mm>` 用于后续修改 cron 触发时间。
 - cron 正常启用后，系统预期很少出现漏拉；如果确实漏拉，先不做自动补拉逻辑。
@@ -43,7 +46,7 @@ StockTools（命令行名：`st`）是一个面向 A 股中长线投资者的终
 - 日 K 价格一律使用前复权口径。
 - 数据统一存储为：code, name, date, open, close, high, low, volume
 - 股票代码统一为纯 6 位数字，如 `000001`、`600519`。
-- `st init` 中个别股票拉取失败时沉默跳过，不阻断整体初始化。
+- `st init` 不创建工作目录、不写 shell rc、不初始化 `config.db`、不配置 cron；个别股票拉取失败时沉默跳过，不阻断整体初始化。
 
 ### 3.2 选股扫描（st find）
 
@@ -53,7 +56,7 @@ StockTools（命令行名：`st`）是一个面向 A 股中长线投资者的终
 | `st find channel` | 上升通道扫描 |
 | `st find volume_absorb` | 爆量吸筹扫描 |
 | `st find independent` | 独立行情扫描 |
-| `st find <scanner> --csv <path>` | 将扫描结果导出为 CSV |
+| `st find <scanner> --csv <path>` | 将扫描结果导出为 CSV ，不传path默认在工作区|
 
 - 数据源：本地sqlite（日线）
 - 股票池支持：全A
@@ -113,7 +116,7 @@ StockTools（命令行名：`st`）是一个面向 A 股中长线投资者的终
 - 买入日期不提供参数，默认当天。
 - 允许同一股票存在多笔 open 持仓。
 - `st hold out <code> --price <卖出价>` 默认卖出该股票的全部 open 持仓并关闭记录。
-- 传入 `--dec` 时表示仅减仓，不关闭全部 open 持仓；第一版不记录减仓数量，只记录一次减仓事件/备注。
+- 传入 `--dec` 时表示发生减仓操作，不关闭全部 open 持仓；第一版不记录减仓数量，无需传入数量，只记录一次操作/备注。
 - 止损/目标价可后续通过 `st hold set` 手动设置，也可由 `st alert` 分析后在用户确认后写入。
 - 不计算盈亏百分比；用户在自己的交易平台查看盈亏。
 - `st hold history` 展示所有 closed 记录，支持 `--near <number>` 按时间相近程度列举最近 N 条交易记录，支持 `--csv <path>` 导出。
@@ -257,22 +260,16 @@ CREATE TABLE model_config (
 
 ## 7. 项目结构
 
-```
-st (CLI入口)
-├── commands/         # 子命令实现
-│   ├── find.py       # 选股扫描
-│   ├── record.py     # 关注池管理
-│   ├── watch.py      # 买入提醒
-│   ├── hold.py       # 持仓管理
-│   └── alert.py      # 卖出提醒
-├── scanners/         # 形态检测算法
-├── data/             # 数据源层
-├── ai/               # DeepSeek API 封装
-├── db/               # SQLite 存储层
-├── output/           # 输出格式化
-├── setup.sh          # 工作目录、shell 指令、cron 配置初始化
-└── config.py         # 全局配置入口
-```
+项目结构以 [modules.md](modules.md) 为准。核心边界：
+
+- `cli/`：argparse 子命令入口，只负责参数解析、用户交互和输出调用。
+- `services/`：完整用例编排层，承接 `find`、`record`、`watch`、`hold`、`alert`、`init/update/cron` 等流程。
+- `scanners/`：纯形态检测算法，不直接读写数据库。
+- `ai/`：OpenAI 兼容客户端、prompt 构建、AI 结果解析和结构化结果对象。
+- `data/`：主库连接、schema、provider、repository。
+- `config/`：`config.db` 与模型配置读写。
+- `infra/`：工作目录解析、cron、shell rc 写入等系统能力。
+- `output/`：终端输出与 CSV 导出，只被 CLI 调用。
 
 当前代码几乎都需要大搬家或重构，项目结构以重构后的目标结构为准。
 
@@ -281,8 +278,9 @@ st (CLI入口)
 
 | 阶段 | 内容 | 交付物 |
 |------|------|--------|
-| M1 | setup + 数据层 + CLI 骨架 + 基础扫描器迁移 | `setup.sh` / `st init` / `st update` / `st cron set` / `st find box_break` / `st find channel` 可用 |
-| M2 | 持仓管理 + 关注池 | `st hold in/out/list` + `st record` 可用 |
-| M3 | DeepSeek 集成 | `st watch` + `st alert` 可用 |
-| M4 | 补齐扫描器 | `st find volume_absorb` + `st find independent` 可用 |
-| M5 | TUI | 后续补充 TUI 需求后实现 |
+| M1 | setup + 数据库初始化 + CLI 骨架 + 数据更新 | `setup.sh` / `st init` / `st update` / `st cron set` 可用 |
+| M2 | 基础扫描闭环 | `st find box_break` / `st find channel` 可用，扫描器通过 service 批量执行 |
+| M3 | 关注池 + 持仓管理 | `st record` + `st hold in/out/list/history` 可用 |
+| M4 | DeepSeek 集成 | `st watch` + `st alert` 可用，AI 结果写入 `ai_logs` |
+| M5 | 补齐扫描器 | `st find volume_absorb` + `st find independent` 可用 |
+| M6 | TUI | 后续补充 TUI 需求后实现 |
