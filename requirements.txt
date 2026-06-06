@@ -1,0 +1,6 @@
+akshare
+baostock
+openai
+pandas
+numpy
+
