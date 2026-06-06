@@ -1,12 +1,12 @@
 # 当前TODO
 
 审核并优化代码
-- cli
-- config
-- data
-- infra
-- output
-- services
+- [x] cli
+- [x] config
+- [x] data
+- [x] infra
+- [x] output
+- [x] services
 
 
 
