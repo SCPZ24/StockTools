@@ -117,8 +117,14 @@ def test_scanners_match_synthetic_data():
     vol_rows = make_rows(days=100)
     for i, row in enumerate(vol_rows):
         if i >= 80:
+            row["volume"] = 1200
+            row["close"] = 12.0 + (i - 80) * 0.02
+            row["open"] = row["close"] - 0.05
+            row["high"] = row["close"] + 0.2
+            row["low"] = row["close"] - 0.2
+        if i >= 95:
             row["volume"] = 3000
-            row["close"] = 13 + (i % 5) * 0.1
+            row["close"] = 12.4 + (i - 95) * 0.05
             row["open"] = row["close"] - 0.05
             row["high"] = row["close"] + 0.2
             row["low"] = row["close"] - 0.2
@@ -131,6 +137,7 @@ def test_scanners_match_synthetic_data():
         row["open"] = row["close"] - 0.02
         row["high"] = row["close"] + 0.1
         row["low"] = row["close"] - 0.1
+        row["volume"] = 500 if i >= 120 else 2000
     strong_df = pd.DataFrame(strong_rows)
     assert get_scanner("independent").detect(strong_df, baseline_return=0.05).matched
 

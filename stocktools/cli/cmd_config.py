@@ -25,17 +25,6 @@ def register(subparsers) -> None:
     show_cmd = actions.add_parser("show", help="查看当前模型配置")
     show_cmd.set_defaults(func=handle_model_show)
 
-    add = groups.add_parser("add", help="新增或覆盖配置")
-    add_actions = add.add_subparsers(dest="add_target", required=True)
-    add_model = add_actions.add_parser("model", help="新增或覆盖模型配置")
-    add_model_args(add_model)
-    add_model.set_defaults(func=handle_model_set)
-
-    show = groups.add_parser("show", help="查看配置")
-    show_actions = show.add_subparsers(dest="show_target", required=True)
-    show_model = show_actions.add_parser("model", help="查看当前模型配置")
-    show_model.set_defaults(func=handle_model_show)
-
 
 def add_model_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--base-url", required=True)

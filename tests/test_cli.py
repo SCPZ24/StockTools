@@ -47,7 +47,7 @@ def seed_workdir(home: Path, code: str = "600519") -> None:
                 "close": price + 0.05,
                 "high": price + 0.2,
                 "low": price - 0.2,
-                "volume": 1000 + i,
+                "volume": 500 if i >= 120 else 2000,
             }
         )
     KlineRepo(paths.database_path).bulk_insert(rows)
@@ -65,8 +65,6 @@ def test_all_documented_command_groups_expose_help(tmp_path: Path):
         ["config", "model", "--help"],
         ["config", "model", "set", "--help"],
         ["config", "model", "show", "--help"],
-        ["config", "add", "model", "--help"],
-        ["config", "show", "model", "--help"],
         ["find", "--help"],
         ["record", "--help"],
         ["record", "add", "--help"],
@@ -158,7 +156,7 @@ def test_cli_config_model_set_and_show(tmp_path: Path):
     assert "secret" not in show_result.stdout
     assert "******" in show_result.stdout
 
-    alias_set = run_cli(
+    unsupported_add = run_cli(
         [
             "config",
             "add",
@@ -172,11 +170,10 @@ def test_cli_config_model_set_and_show(tmp_path: Path):
         ],
         home,
     )
-    assert alias_set.returncode == 0, alias_set.stderr
-    alias_show = run_cli(["config", "show", "model"], home)
-    assert alias_show.returncode == 0
-    assert "https://api2.example.com" in alias_show.stdout
-    assert "model-b" in alias_show.stdout
+    assert unsupported_add.returncode == 2
+
+    unsupported_show = run_cli(["config", "show", "model"], home)
+    assert unsupported_show.returncode == 2
 
 
 def test_setup_initializes_databases_and_shell_config_without_cron(tmp_path: Path):

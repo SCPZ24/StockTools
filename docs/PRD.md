@@ -35,12 +35,18 @@ StockTools（命令行名：`st`）是一个面向 A 股中长线投资者的终
 | `st init` | 从 baostock 拉取全A过去1年日K数据入库 |
 | `st update` | 每日增量：从 akshare 拉取当日全市场数据追加入库 |
 | `st cron set <hh> <mm>` | 设置每日自动执行 `st update` 的 cron 时间 |
+| `st cron remove` | 移除 StockTools 自动更新 cron |
+| `st config model set --base-url <url> --api-key <key> --model-name <model>` | 写入或覆盖当前模型配置 |
+| `st config model show` | 查看当前模型配置，API Key 需要脱敏显示 |
 
 - `setup.sh` 和 `st init` 职责分离：`setup.sh` 负责本机环境和数据库表结构初始化，`st init` 只负责抓取初始化行情数据。
 - `setup.sh` 每创建一个配置、文件或 cron 项前，都必须先判断是否已经存在；如果已经存在，则跳过该 setup 步骤，进入下一步。
 - `st init` 只需执行一次，后续用 `st update` 保持数据最新。
 - `setup.sh` 会引导用户配置 cron：默认每天 15:05 执行 `st update`，用户也可以选择不配置 cron。
 - `st cron set <hh> <mm>` 用于后续修改 cron 触发时间。
+- `st cron remove` 只移除由 StockTools 标记块管理的 cron 项，不影响用户其它 cron。
+- `st config model set` 用于后续修改模型配置；第一版只支持这一种模型配置写入语法，不提供 `st config add model` 等别名。
+- `st config model show` 输出 `base_url` 与 `model_name`，但必须隐藏 `api_key` 原文。
 - cron 正常启用后，系统预期很少出现漏拉；如果确实漏拉，先不做自动补拉逻辑。
 - `st update` 在收盘后拉取的当日快照视为正式日 K。
 - 日 K 价格一律使用前复权口径。
@@ -145,7 +151,7 @@ StockTools（命令行名：`st`）是一个面向 A 股中长线投资者的终
 数据获取策略：
 - **初始化（`st init`）**：通过 baostock 逐只拉取过去1年前复权历史日K，写入 SQLite。首次约35分钟，只需执行一次；失败个股沉默跳过。
 - **每日增量（`st update`）**：通过 akshare `stock_zh_a_spot_em()` 一次调用获取全市场当日数据，追加入库。耗时 ~2秒。
-- **自动调度**：`setup.sh` 可配置系统 cron，默认每天 15:05 自动执行 `st update`；也可通过 `st cron set <hh> <mm>` 后续修改。
+- **自动调度**：`setup.sh` 可配置系统 cron，默认每天 15:05 自动执行 `st update`；也可通过 `st cron set <hh> <mm>` 后续修改，通过 `st cron remove` 移除。
 
 统一存储字段：`code, name, date, open, close, high, low, volume`
 
@@ -164,7 +170,7 @@ StockTools（命令行名：`st`）是一个面向 A 股中长线投资者的终
 
 - 扫描器采用抽象类/多态结构：每个形态一个实现，统一 `detect(df, **kwargs)` 接口
 - 数据源通过 provider 层抽象，未来可替换为其他数据源
-- 模型配置存储在 `<workdir>/config.db`，默认参数可通过 CLI 参数覆盖
+- 模型配置存储在 `<workdir>/config.db`，可通过 `st config model set --base-url <url> --api-key <key> --model-name <model>` 覆盖；查看配置使用 `st config model show`，API Key 脱敏展示。
 
 ### 4.4 可用性
 
