@@ -3,7 +3,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widget import Widget
-from textual.widgets import DataTable
+from textual.widgets import DataTable, Static
 
 from stocktools.tui.widgets.detail_panel import DetailPanel
 
@@ -20,6 +20,11 @@ class WatchlistTab(Widget):
         with Horizontal(id="content"):
             yield DataTable(id="left-panel")
             yield DetailPanel()
+        yield Static(
+            "[bright_blue]a[/]添加  [bright_blue]d[/]移除  [bright_blue]g[/]明天买  "
+            "[bright_blue]n[/]备注  [bright_blue]w[/]买入分析  [bright_blue]Enter[/]转入持仓",
+            classes="page-hints",
+        )
 
     def on_mount(self) -> None:
         table = self.query_one(DataTable)

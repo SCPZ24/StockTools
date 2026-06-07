@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.events import Key
+from textual.theme import Theme
 from textual.widgets import Static
 
 from stocktools.data.repos.ai_logs_repo import AiLogsRepo
@@ -29,9 +32,38 @@ def _validate_price(value: str) -> str | None:
     return None
 
 
+_ST_THEME = Theme(
+    name="stocktools",
+    primary="#89b4fa",
+    secondary="#a6e3a1",
+    accent="#fab387",
+    warning="#f9e2af",
+    error="#f38ba8",
+    success="#a6e3a1",
+    surface="ansi_default",
+    background="ansi_default",
+    dark=True,
+    ansi=True,
+    variables={
+        "border": "ansi_bright_black",
+        "border-blurred": "ansi_black",
+        "block-cursor-foreground": "ansi_black",
+        "block-cursor-background": "ansi_white",
+        "input-cursor-background": "ansi_black",
+        "input-cursor-foreground": "ansi_bright_white",
+        "input-cursor-text-style": "none",
+        "input-selection-background": "ansi_bright_blue",
+        "input-selection-foreground": "ansi_black",
+        "screen-selection-background": "ansi_bright_blue",
+        "screen-selection-foreground": "ansi_black",
+    },
+)
+
+
 class StockToolsApp(App):
 
     CSS_PATH = "styles/app.tcss"
+    theme = "stocktools"
 
     BINDINGS = [
         Binding("q", "quit", "退出", show=False),
@@ -39,6 +71,7 @@ class StockToolsApp(App):
 
     def __init__(self) -> None:
         super().__init__()
+        self.register_theme(_ST_THEME)
         paths = Paths.resolve()
         paths.init_databases()
         db = paths.database_path
@@ -86,12 +119,14 @@ class StockToolsApp(App):
         tab_parts = []
         for i, name in enumerate(TAB_NAMES):
             if i == idx:
-                tab_parts.append(f"[bold #89b4fa] {name} [/]")
+                tab_parts.append(f"[bold bright_blue] {name} [/]")
             else:
-                tab_parts.append(f"[#6c7086] {name} [/]")
+                tab_parts.append(f"[dim] {name} [/]")
         self.query_one("#tab-bar", Static).update("  ".join(tab_parts))
         self.query_one("#hint-bar", Static).update(
-            f"[#6c7086]Tab:切换  ↑↓:选择  q:退出  {self._tabs[idx].HINTS}[/]"
+            "[bright_blue]Tab[/][dim]:切换页面  "
+            "[bright_blue]↑↓[/][dim]:选择  "
+            "[bright_blue]q[/][dim]:退出[/]"
         )
         self._tabs[idx].refresh_data()
         self._update_status_bar()
@@ -100,7 +135,7 @@ class StockToolsApp(App):
         watchlist_count = len(self._record_svc.list_all())
         holdings_count = len(self._hold_svc.list_open())
         self.query_one("#status-bar", Static).update(
-            f"[#6c7086]关注: {watchlist_count} | 持仓: {holdings_count}[/]"
+            f"[dim]关注: {watchlist_count} | 持仓: {holdings_count}[/]"
         )
 
     def _current_widget(self):
@@ -153,6 +188,8 @@ class StockToolsApp(App):
                 "enter": self._sc_add,
                 "space": self._sc_run,
                 "c": self._sc_export,
+                "left": self._sc_prev_scanner,
+                "right": self._sc_next_scanner,
             }.get(key)
         return None
 
@@ -212,7 +249,7 @@ class StockToolsApp(App):
 
     async def _do_watch(self, code: str) -> None:
         try:
-            await self.run_in_thread(lambda: self._get_watch_svc().analyze(code))
+            await asyncio.to_thread(self._get_watch_svc().analyze, code)
         except Exception as e:
             self.notify(str(e), severity="error")
         self._current_widget().refresh_data()
@@ -329,7 +366,7 @@ class StockToolsApp(App):
 
     async def _do_alert(self, code: str) -> None:
         try:
-            await self.run_in_thread(lambda: self._get_alert_svc().analyze(code))
+            await asyncio.to_thread(self._get_alert_svc().analyze, code)
         except Exception as e:
             self.notify(str(e), severity="error")
         self._current_widget().refresh_data()
@@ -341,7 +378,7 @@ class StockToolsApp(App):
 
     async def _do_alert_all(self) -> None:
         try:
-            await self.run_in_thread(lambda: self._get_alert_svc().analyze())
+            await asyncio.to_thread(self._get_alert_svc().analyze)
         except Exception as e:
             self.notify(str(e), severity="error")
         self._current_widget().refresh_data()
@@ -361,6 +398,12 @@ class StockToolsApp(App):
                 self._update_status_bar()
             except ValueError as e:
                 self.notify(str(e), severity="error")
+
+    def _sc_prev_scanner(self) -> None:
+        self._current_widget().select_prev_scanner()
+
+    def _sc_next_scanner(self) -> None:
+        self._current_widget().select_next_scanner()
 
     def _sc_run(self) -> None:
         self._current_widget().run_scan()

@@ -16,14 +16,22 @@ class KlineRepo:
         self.db_path = db_path
 
     def _read(self, operation: Callable[[sqlite3.Connection], T]) -> T:
+        conn = connect(self.db_path)
         try:
-            with connect(self.db_path) as conn:
-                return operation(conn)
+            result = operation(conn)
         except (sqlite3.OperationalError, pd.errors.DatabaseError) as exc:
+            conn.close()
             if "unable to open database file" not in str(exc):
                 raise
-            with connect_readonly(self.db_path) as conn:
-                return operation(conn)
+            conn2 = connect_readonly(self.db_path)
+            try:
+                return operation(conn2)
+            finally:
+                conn2.close()
+        else:
+            return result
+        finally:
+            conn.close()
 
     def bulk_insert(self, rows: list[dict]) -> int:
         if not rows:

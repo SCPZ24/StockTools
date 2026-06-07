@@ -20,7 +20,7 @@ class HistoryModal(ModalScreen[None]):
     def compose(self):
         from textual.containers import Vertical
         with Vertical(id="history-container"):
-            yield Static("[bold #89b4fa]历史交易记录[/]", id="history-title")
+            yield Static("[bold bright_blue]历史交易记录[/]", id="history-title")
             with VerticalScroll():
                 yield DataTable(id="history-table")
 
@@ -43,7 +43,7 @@ class HistoryModal(ModalScreen[None]):
 
 class HoldingsTab(Widget):
 
-    HINTS = "s:止损价  t:目标价  n:备注  x:平仓  r:减仓  A:卖出分析  Shift+A:全部分析  h:历史"
+    HINTS = "s:止损  t:目标  n:备注  x:平仓  r:减仓  A:分析  Shift+A:全部  h:历史"
 
     def __init__(self) -> None:
         super().__init__()
@@ -53,6 +53,12 @@ class HoldingsTab(Widget):
         with Horizontal(id="content"):
             yield DataTable(id="left-panel")
             yield DetailPanel()
+        yield Static(
+            "[bright_blue]s[/]止损价  [bright_blue]t[/]目标价  [bright_blue]n[/]备注  "
+            "[bright_blue]x[/]平仓  [bright_blue]r[/]减仓  "
+            "[bright_blue]A[/]卖出分析  [bright_blue]Shift+A[/]全部分析  [bright_blue]h[/]历史",
+            classes="page-hints",
+        )
 
     def on_mount(self) -> None:
         table = self.query_one(DataTable)

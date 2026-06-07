@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widget import Widget
-from textual.widgets import Button, DataTable, Static
+from textual.widgets import DataTable, Static
 
 from stocktools.cli.cmd_find import format_indicator_summary
 from stocktools.scanners.registry import scanner_names
@@ -12,39 +14,50 @@ from stocktools.tui.widgets.detail_panel import DetailPanel
 
 class ScanTab(Widget):
 
-    HINTS = "Enter:加入关注池  空格:执行扫描  c:导出CSV"
+    HINTS = "Enter:加入关注池  空格:执行扫描  ←→:切换扫描器  c:导出CSV"
 
     def __init__(self) -> None:
         super().__init__()
         self._results: list[dict] = []
-        self._selected_scanner: str = scanner_names()[0]
+        self._scanners = scanner_names()
+        self._scanner_idx: int = 0
+        self._selected_scanner: str = self._scanners[0]
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="content"):
             with Vertical(id="left-panel"):
-                with Horizontal(id="scanner-selector"):
-                    for name in scanner_names():
-                        cls = "scanner-btn selected" if name == self._selected_scanner else "scanner-btn"
-                        yield Button(name, id=f"scan-{name}", classes=cls)
+                yield Static("", id="scanner-selector")
                 yield DataTable(id="scan-results")
             yield DetailPanel()
+        yield Static(
+            "[bright_blue]空格[/]执行扫描  [bright_blue]←→[/]切换扫描器  "
+            "[bright_blue]Enter[/]加入关注池  [bright_blue]c[/]导出CSV",
+            classes="page-hints",
+        )
 
     def on_mount(self) -> None:
         table = self.query_one("#scan-results", DataTable)
         table.cursor_type = "row"
         table.add_columns("代码", "名称", "形态", "关键指标")
+        self._render_scanner_bar()
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id and event.button.id.startswith("scan-"):
-            scanner_name = event.button.id[5:]
-            self._select_scanner(scanner_name)
+    def _render_scanner_bar(self) -> None:
+        parts = []
+        for i, name in enumerate(self._scanners):
+            if i == self._scanner_idx:
+                parts.append(f"[bold bright_blue underline] {name} [/]")
+            else:
+                parts.append(f"[dim] {name} [/]")
+        self.query_one("#scanner-selector", Static).update("  ".join(parts))
+        self._selected_scanner = self._scanners[self._scanner_idx]
 
-    def _select_scanner(self, name: str) -> None:
-        self._selected_scanner = name
-        for btn in self.query(".scanner-btn"):
-            btn.remove_class("selected")
-        btn = self.query_one(f"#scan-{name}", Button)
-        btn.add_class("selected")
+    def select_prev_scanner(self) -> None:
+        self._scanner_idx = (self._scanner_idx - 1) % len(self._scanners)
+        self._render_scanner_bar()
+
+    def select_next_scanner(self) -> None:
+        self._scanner_idx = (self._scanner_idx + 1) % len(self._scanners)
+        self._render_scanner_bar()
 
     def run_scan(self) -> None:
         self.query_one(DetailPanel).set_loading("扫描中...")
@@ -57,7 +70,7 @@ class ScanTab(Widget):
         svc = self.app._find_svc
         scanner_name = self._selected_scanner
         try:
-            await self.app.run_in_thread(lambda: self._scan_in_thread(svc, scanner_name))
+            await asyncio.to_thread(self._scan_in_thread, svc, scanner_name)
         except Exception as e:
             self.app.notify(str(e), severity="error")
         self._finish_scan()
@@ -105,4 +118,4 @@ class ScanTab(Widget):
         return None
 
     def refresh_data(self) -> None:
-        pass
+        self.run_scan()

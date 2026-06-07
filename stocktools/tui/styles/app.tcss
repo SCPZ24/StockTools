@@ -1,14 +1,10 @@
 /* ── StockTools TUI Theme ─────────────────────────────── */
-/* Palette: Catppuccin Mocha-inspired dark theme           */
-/*   surface:   #1e1e2e    base:      #181825              */
-/*   text:      #cdd6f4    subtext:   #6c7086              */
-/*   border:    #45475a    accent:    #89b4fa              */
-/*   orange:    #fab387    red:       #f38ba8              */
-/*   green:     #a6e3a1    yellow:    #f9e2af              */
+/* Uses terminal-native background (ansi_default) for      */
+/* transparency support on ghostty, kitty, etc.            */
 
 Screen {
-    background: #1e1e2e;
-    color: #cdd6f4;
+    background: $background;
+    color: $text;
 }
 
 /* ── Header hint bar ──────────────────────────────────── */
@@ -16,14 +12,9 @@ Screen {
 #hint-bar {
     dock: top;
     height: 1;
-    background: #181825;
-    color: #6c7086;
+    background: $surface;
+    color: $text-muted;
     padding: 0 1;
-}
-
-#hint-bar .hint-key {
-    color: #89b4fa;
-    text-style: bold;
 }
 
 /* ── Tab bar ──────────────────────────────────────────── */
@@ -31,18 +22,8 @@ Screen {
 #tab-bar {
     dock: top;
     height: 1;
-    background: #181825;
+    background: $surface;
     padding: 0 1;
-}
-
-.tab-label {
-    padding: 0 2;
-    color: #6c7086;
-}
-
-.tab-label.active {
-    color: #89b4fa;
-    text-style: bold;
 }
 
 /* ── Status bar ───────────────────────────────────────── */
@@ -50,8 +31,18 @@ Screen {
 #status-bar {
     dock: bottom;
     height: 1;
-    background: #181825;
-    color: #6c7086;
+    background: $surface;
+    color: $text-muted;
+    padding: 0 1;
+}
+
+/* ── Page-level hints bar (bottom of each tab) ────────── */
+
+.page-hints {
+    dock: bottom;
+    height: 1;
+    background: $background;
+    color: $text-muted;
     padding: 0 1;
 }
 
@@ -59,122 +50,86 @@ Screen {
 
 #content {
     layout: horizontal;
+    background: $background;
 }
 
 #left-panel {
     width: 1fr;
     min-width: 24;
     max-width: 40;
-    border-right: solid #45475a;
+    border-right: solid $border;
+    background: $background;
 }
 
 #right-panel {
     width: 3fr;
     padding: 1 2;
+    background: $background;
 }
 
 /* ── DataTable styling ────────────────────────────────── */
 
 DataTable {
     height: 1fr;
+    background: $background;
 }
 
 DataTable > .datatable--header {
-    background: #181825;
-    color: #89b4fa;
+    background: $surface;
+    color: $accent;
     text-style: bold;
 }
 
 DataTable > .datatable--cursor {
-    background: #313244;
-    color: #cdd6f4;
+    background: $surface;
+    color: $text;
 }
 
 DataTable > .datatable--hover {
-    background: #27273a;
+    background: $surface;
 }
 
 /* ── Detail panel ─────────────────────────────────────── */
 
-.detail-section {
-    margin-bottom: 1;
+DetailPanel {
+    background: $background;
 }
 
-.detail-label {
-    color: #6c7086;
-    text-style: dim;
-}
-
-.detail-value {
-    color: #cdd6f4;
-}
-
-.detail-title {
-    color: #89b4fa;
-    text-style: bold;
-    margin-bottom: 1;
-}
-
-/* ── AI conclusion colors ─────────────────────────────── */
-
-.conclusion-buy {
-    color: #f38ba8;
-    text-style: bold;
-}
-
-.conclusion-sell {
-    color: #a6e3a1;
-    text-style: bold;
-}
-
-.conclusion-hold {
-    color: #f9e2af;
-    text-style: bold;
-}
-
-.conclusion-wait {
-    color: #6c7086;
-    text-style: bold;
-}
-
-/* ── Buy-tomorrow highlight ───────────────────────────── */
-
-.buy-tomorrow {
-    color: #fab387;
-}
-
-/* ── Loading indicator ────────────────────────────────── */
-
-.loading {
-    color: #6c7086;
-    text-style: italic;
+VerticalScroll {
+    background: $background;
 }
 
 /* ── Scanner selector ─────────────────────────────────── */
 
 #scanner-selector {
-    height: 3;
-    padding: 0 1;
-    border-bottom: solid #45475a;
+    height: auto;
+    padding: 1 0 0 0;
+    background: $background;
+    layout: horizontal;
 }
 
 .scanner-btn {
-    margin: 0 1;
-    min-width: 14;
-    background: #181825;
-    color: #6c7086;
-    border: solid #45475a;
+    margin: 0 1 1 0;
+    min-width: 8;
+    height: 1;
+    background: $background;
+    color: $text-muted;
+    border: none;
 }
 
 .scanner-btn:hover {
-    background: #313244;
+    color: $text;
 }
 
 .scanner-btn.selected {
-    background: #313244;
-    color: #89b4fa;
-    border: solid #89b4fa;
-    text-style: bold;
+    color: $accent;
+    text-style: bold underline;
+}
+
+/* ── Scan left panel needs more width ─────────────────── */
+
+ScanTab #left-panel {
+    max-width: 64;
 }
 
 /* ── Input modal ──────────────────────────────────────── */
@@ -188,14 +143,14 @@ InputModal {
     max-width: 80%;
     height: auto;
     max-height: 12;
-    background: #1e1e2e;
-    border: round #89b4fa;
+    background: $surface;
+    border: round $accent;
     padding: 1 2;
 }
 
 #modal-title {
     text-align: center;
-    color: #89b4fa;
+    color: $accent;
     text-style: bold;
     margin-bottom: 1;
 }
@@ -206,7 +161,7 @@ InputModal {
 }
 
 #modal-error {
-    color: #f38ba8;
+    color: $error;
     text-align: center;
     height: 1;
 }
@@ -222,14 +177,20 @@ HistoryModal {
     max-width: 90%;
     height: 24;
     max-height: 80%;
-    background: #1e1e2e;
-    border: round #89b4fa;
+    background: $surface;
+    border: round $accent;
     padding: 1 2;
 }
 
 #history-title {
     text-align: center;
-    color: #89b4fa;
+    color: $accent;
     text-style: bold;
     margin-bottom: 1;
+}
+
+/* ── Tab widgets ──────────────────────────────────────── */
+
+WatchlistTab, HoldingsTab, ScanTab {
+    background: $background;
 }
