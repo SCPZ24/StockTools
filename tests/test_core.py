@@ -17,6 +17,7 @@ import stocktools.data.db as data_db
 import stocktools.data.providers.baostock_provider as baostock_provider
 import stocktools.services.data_service as data_service
 import stocktools.services.find_service as find_service_module
+from stocktools.ai.alert_analyst import AlertAnalyst
 from stocktools.ai.client import LLMClient
 from stocktools.data.repos.ai_logs_repo import AiLogsRepo
 from stocktools.data.repos.holdings_repo import HoldingsRepo
@@ -31,6 +32,7 @@ from stocktools.services.record_service import RecordService
 from stocktools.services.watch_service import WatchService
 from stocktools.tui.app import StockToolsApp
 from stocktools.tui.screens.scan import ScanTab
+from stocktools.tui.stock_style import stock_name_cell
 from textual.widgets import DataTable
 
 
@@ -142,6 +144,40 @@ def test_kline_repo_read_methods_work_when_database_directory_is_not_writable(tm
         assert kline.get_latest_name("600519") == "贵州茅台"
     finally:
         db_dir.chmod(stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC)
+
+
+def test_kline_repo_reports_latest_close_direction(tmp_path: Path, monkeypatch):
+    paths = init_paths(tmp_path, monkeypatch)
+    kline = KlineRepo(paths.database_path)
+    kline.bulk_insert(
+        [
+            {"code": "600519", "name": "贵州茅台", "date": "2026-06-01", "open": 10, "close": 10, "high": 11, "low": 9, "volume": 1000},
+            {"code": "600519", "name": "贵州茅台", "date": "2026-06-02", "open": 10, "close": 12, "high": 13, "low": 9, "volume": 1000},
+            {"code": "000001", "name": "平安银行", "date": "2026-06-01", "open": 10, "close": 10, "high": 11, "low": 9, "volume": 1000},
+            {"code": "000001", "name": "平安银行", "date": "2026-06-02", "open": 10, "close": 9, "high": 11, "low": 8, "volume": 1000},
+            {"code": "300001", "name": "特锐德", "date": "2026-06-01", "open": 10, "close": 10, "high": 11, "low": 9, "volume": 1000},
+            {"code": "300001", "name": "特锐德", "date": "2026-06-02", "open": 10, "close": 10, "high": 11, "low": 9, "volume": 1000},
+        ]
+    )
+
+    assert kline.get_latest_close_direction("600519") == "up"
+    assert kline.get_latest_close_direction("000001") == "down"
+    assert kline.get_latest_close_direction("300001") == "flat"
+    assert kline.get_latest_close_direction("688001") is None
+
+
+def test_stock_name_cell_uses_a_share_price_colors():
+    class FakeRepo:
+        def __init__(self, direction: str | None) -> None:
+            self.direction = direction
+
+        def get_latest_close_direction(self, code: str) -> str | None:
+            return self.direction
+
+    assert stock_name_cell(FakeRepo("up"), "600519", "贵州茅台").style == "red"
+    assert stock_name_cell(FakeRepo("down"), "600519", "贵州茅台").style == "green"
+    assert stock_name_cell(FakeRepo("flat"), "600519", "贵州茅台").style == "white"
+    assert stock_name_cell(FakeRepo(None), "600519", "贵州茅台").style == "white"
 
 
 def test_connect_readonly_opens_database_as_immutable_uri(tmp_path: Path, monkeypatch):
@@ -398,6 +434,25 @@ def test_services_scan_record_watch_alert(tmp_path: Path, monkeypatch):
     result = alert.analyze("600519")[0]
     assert result.suggested_stop_loss == 92
     assert holdings.list_open("600519")[0]["stop_loss"] == 90
+
+
+def test_alert_analyst_uses_holding_entry_price_as_cost_price():
+    captured = {}
+
+    class FakeLLMClient:
+        def invoke(self, messages):
+            captured["messages"] = messages
+            return "analysis: 趋势稳定\nconclusion: 止损：92；止盈：128"
+
+    analyst = AlertAnalyst(FakeLLMClient())
+    holding = {"code": "600519", "name": "贵州茅台", "entry_price": 100.5, "quantity": 200}
+    klines = pd.DataFrame(make_rows("600519", "贵州茅台", 20))
+
+    analyst.analyze(holding, klines)
+
+    user_prompt = captured["messages"][1]["content"]
+    assert "- 买入价：100.5" in user_prompt
+    assert "- 买入价：未知" not in user_prompt
 
 
 def test_llm_client_invokes_openai_compatible_non_streaming_api(tmp_path: Path, monkeypatch):

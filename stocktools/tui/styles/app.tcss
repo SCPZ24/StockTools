@@ -1,6 +1,5 @@
 /* ── StockTools TUI Theme ─────────────────────────────── */
-/* Uses terminal-native background (ansi_default) for      */
-/* transparency support on ghostty, kitty, etc.            */
+/* Uses transparent backgrounds so terminal opacity shows through. */
 
 Screen {
     background: $background;
@@ -103,9 +102,8 @@ VerticalScroll {
 
 #scanner-selector {
     height: auto;
-    padding: 1 0 0 0;
-    background: $background;
-    layout: horizontal;
+    padding: 0 1;
+    background: $surface;
 }
 
 .scanner-btn {

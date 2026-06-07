@@ -5,6 +5,7 @@ from textual.containers import Horizontal
 from textual.widget import Widget
 from textual.widgets import DataTable, Static
 
+from stocktools.tui.stock_style import stock_name_cell
 from stocktools.tui.widgets.detail_panel import DetailPanel
 
 
@@ -38,7 +39,7 @@ class WatchlistTab(Widget):
         table.clear()
         for item in self._items:
             buy_flag = "●" if item.get("buy_tomorrow") else ""
-            table.add_row(item["name"], buy_flag, key=item["code"])
+            table.add_row(stock_name_cell(svc.kline_repo, item["code"], item["name"]), buy_flag, key=item["code"])
         if self._items:
             table.move_cursor(row=0)
             self._show_detail(0)

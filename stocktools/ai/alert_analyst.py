@@ -11,9 +11,11 @@ from .models import AlertAnalysis
 SYSTEM_PROMPT = """\
 你是A股中长线持仓管理助手。用户已做多持股，你需要根据当前行情分析持仓状况，并给出止损线和止盈线建议。
 
+你的语言应该犀利且专业，并且足够详细。
+
 你必须严格按照以下格式回复，不要添加任何额外内容：
 
-analysis: <你的详细分析，包括当前趋势、支撑压力位、风险点、持仓建议等，写在一行内>
+analysis: <你的详细分析，包括当前趋势、支撑压力位、风险点、主力行为分析、主力意图猜测、机构资金动向、主力或机构持股量等有助于用户做投资决策内容，写在一行内>
 conclusion: 止损：<数值>；止盈：<数值>
 
 字段说明：
@@ -26,10 +28,18 @@ USER_PROMPT_TEMPLATE = """\
 - 代码：{code}
 - 名称：{name}
 - 买入价：{cost_price}
-- 持仓数量：{quantity}
 - 最近20个交易日行情：
 {klines}\
 """
+
+
+def holding_cost_price(holding: dict) -> object:
+    cost_price = holding.get("cost_price")
+    if cost_price is None:
+        cost_price = holding.get("entry_price")
+    if cost_price is None:
+        return "未知"
+    return cost_price
 
 
 def parse_response(text: str) -> tuple[str, float | None, float | None]:
@@ -64,8 +74,7 @@ class AlertAnalyst:
         prompt = USER_PROMPT_TEMPLATE.format(
             code=holding.get("code", ""),
             name=holding.get("name", ""),
-            cost_price=holding.get("cost_price", "未知"),
-            quantity=holding.get("quantity", "未知"),
+            cost_price=holding_cost_price(holding),
             klines=klines_str,
         )
         if user_prompt:
@@ -85,4 +94,3 @@ class AlertAnalyst:
             suggested_stop_loss=stop_loss,
             suggested_take_profit=take_profit,
         )
-

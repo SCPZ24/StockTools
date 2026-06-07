@@ -117,3 +117,26 @@ class KlineRepo:
             ).fetchone()
         )
         return row["name"] if row else None
+
+    def get_latest_close_direction(self, code: str) -> str | None:
+        rows = self._read(
+            lambda conn: conn.execute(
+                """
+                SELECT close
+                FROM daily_kline
+                WHERE code = ?
+                ORDER BY date DESC
+                LIMIT 2
+                """,
+                (code,),
+            ).fetchall()
+        )
+        if len(rows) < 2:
+            return None
+        latest = float(rows[0]["close"])
+        previous = float(rows[1]["close"])
+        if latest > previous:
+            return "up"
+        if latest < previous:
+            return "down"
+        return "flat"

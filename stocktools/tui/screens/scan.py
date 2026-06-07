@@ -3,13 +3,31 @@ from __future__ import annotations
 import asyncio
 
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widget import Widget
 from textual.widgets import DataTable, Static
 
 from stocktools.cli.cmd_find import format_indicator_summary
 from stocktools.scanners.registry import scanner_names
+from stocktools.tui.stock_style import stock_name_cell
 from stocktools.tui.widgets.detail_panel import DetailPanel
+
+
+class _ScanResultsTable(DataTable):
+    """DataTable that does not bind left/right so arrows can switch scanners."""
+
+    BINDINGS = [
+        Binding("enter", "select_cursor", show=False),
+        Binding("up", "cursor_up", show=False),
+        Binding("down", "cursor_down", show=False),
+        Binding("pageup", "page_up", show=False),
+        Binding("pagedown", "page_down", show=False),
+        Binding("ctrl+home", "scroll_top", show=False),
+        Binding("ctrl+end", "scroll_bottom", show=False),
+        Binding("home", "scroll_home", show=False),
+        Binding("end", "scroll_end", show=False),
+    ]
 
 
 class ScanTab(Widget):
@@ -27,7 +45,7 @@ class ScanTab(Widget):
         with Horizontal(id="content"):
             with Vertical(id="left-panel"):
                 yield Static("", id="scanner-selector")
-                yield DataTable(id="scan-results")
+                yield _ScanResultsTable(id="scan-results")
             yield DetailPanel()
         yield Static(
             "[bright_blue]空格[/]执行扫描  [bright_blue]←→[/]切换扫描器  "
@@ -42,13 +60,13 @@ class ScanTab(Widget):
         self._render_scanner_bar()
 
     def _render_scanner_bar(self) -> None:
-        parts = []
+        parts = ["[bold]扫描器:[/]\n"]
         for i, name in enumerate(self._scanners):
             if i == self._scanner_idx:
                 parts.append(f"[bold bright_blue underline] {name} [/]")
             else:
                 parts.append(f"[dim] {name} [/]")
-        self.query_one("#scanner-selector", Static).update("  ".join(parts))
+        self.query_one("#scanner-selector", Static).update(" ".join(parts))
         self._selected_scanner = self._scanners[self._scanner_idx]
 
     def select_prev_scanner(self) -> None:
@@ -85,7 +103,7 @@ class ScanTab(Widget):
         self._results.append(item)
         table.add_row(
             item["code"],
-            item.get("name", ""),
+            stock_name_cell(self.app._find_svc.kline_repo, item["code"], item.get("name", "")),
             item.get("pattern", ""),
             format_indicator_summary(item, limit=2),
             key=item["code"],
