@@ -6,7 +6,7 @@ import pandas as pd
 
 
 class AkshareProvider:
-    def fetch_daily_all(self) -> list[dict]:
+    def fetch_daily_all(self, trade_date: date | None = None) -> list[dict]:
         try:
             import akshare as ak
         except ImportError as exc:
@@ -25,7 +25,7 @@ class AkshareProvider:
         if missing:
             raise RuntimeError(f"akshare 返回字段缺失: {', '.join(missing)}")
         rows = []
-        today = date.today().isoformat()
+        row_date = (trade_date or date.today()).isoformat()
         for _, row in df.iterrows():
             code = str(row["代码"]).zfill(6)
             if not (code.startswith("6") or code.startswith("0") or code.startswith("3")):
@@ -36,6 +36,5 @@ class AkshareProvider:
             values = {target: pd.to_numeric(row[source], errors="coerce") for source, target in columns.items() if target not in ("code", "name")}
             if any(pd.isna(v) for v in values.values()):
                 continue
-            rows.append({"code": code, "name": name, "date": today, **{k: float(v) for k, v in values.items()}})
+            rows.append({"code": code, "name": name, "date": row_date, **{k: float(v) for k, v in values.items()}})
         return rows
-

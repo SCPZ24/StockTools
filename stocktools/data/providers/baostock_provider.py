@@ -29,18 +29,21 @@ class BaostockProvider:
         self.bs.logout()
 
     def list_stocks(self) -> list[dict]:
-        day = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        data = self.bs.query_all_stock(day=day).get_data()
-        stocks = []
-        for _, row in data.iterrows():
-            code = row["code"]
-            name = row.get("code_name", "")
-            if "ST" in str(name).upper():
-                continue
-            if not (code.startswith("sh.6") or code.startswith("sz.0") or code.startswith("sz.3")):
-                continue
-            stocks.append({"code": pure_code(code), "bs_code": code, "name": name})
-        return stocks
+        for offset in range(1, 11):
+            day = (datetime.now() - timedelta(days=offset)).strftime("%Y-%m-%d")
+            data = self.bs.query_all_stock(day=day).get_data()
+            stocks = []
+            for _, row in data.iterrows():
+                code = row["code"]
+                name = row.get("code_name", "")
+                if "ST" in str(name).upper():
+                    continue
+                if not (code.startswith("sh.6") or code.startswith("sz.0") or code.startswith("sz.3")):
+                    continue
+                stocks.append({"code": pure_code(code), "bs_code": code, "name": name})
+            if stocks:
+                return stocks
+        return []
 
     def fetch_history(self, code: str, start: str, end: str, name: str | None = None) -> list[dict]:
         bs_code = code if "." in code else to_bs_code(code)
@@ -73,4 +76,3 @@ class BaostockProvider:
                 }
             )
         return normalized
-

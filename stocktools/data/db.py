@@ -4,12 +4,21 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
+from urllib.parse import quote
 
 from .schema import MAIN_SCHEMA_SQL
 
 
 def connect(path: Path | str) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def connect_readonly(path: Path | str) -> sqlite3.Connection:
+    db_path = Path(path).expanduser().resolve()
+    uri = f"file://{quote(str(db_path))}?mode=ro&immutable=1"
+    conn = sqlite3.connect(uri, uri=True)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -30,4 +39,3 @@ def transaction(path: Path | str) -> Iterator[sqlite3.Connection]:
         raise
     finally:
         conn.close()
-

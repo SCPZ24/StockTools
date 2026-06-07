@@ -1,15 +1,29 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
+from typing import Callable, TypeVar
 
 import pandas as pd
 
-from stocktools.data.db import connect
+from stocktools.data.db import connect, connect_readonly
+
+T = TypeVar("T")
 
 
 class KlineRepo:
     def __init__(self, db_path: Path | str):
         self.db_path = db_path
+
+    def _read(self, operation: Callable[[sqlite3.Connection], T]) -> T:
+        try:
+            with connect(self.db_path) as conn:
+                return operation(conn)
+        except (sqlite3.OperationalError, pd.errors.DatabaseError) as exc:
+            if "unable to open database file" not in str(exc):
+                raise
+            with connect_readonly(self.db_path) as conn:
+                return operation(conn)
 
     def bulk_insert(self, rows: list[dict]) -> int:
         if not rows:
@@ -53,15 +67,14 @@ class KlineRepo:
             ORDER BY date DESC
             {limit}
         """
-        with connect(self.db_path) as conn:
-            df = pd.read_sql_query(query, conn, params=(code,))
+        df = self._read(lambda conn: pd.read_sql_query(query, conn, params=(code,)))
         if df.empty:
             return df
         return df.sort_values("date").reset_index(drop=True)
 
     def list_codes(self) -> list[dict]:
-        with connect(self.db_path) as conn:
-            rows = conn.execute(
+        rows = self._read(
+            lambda conn: conn.execute(
                 """
                 SELECT k.code, k.name
                 FROM daily_kline k
@@ -73,18 +86,18 @@ class KlineRepo:
                 ORDER BY k.code
                 """
             ).fetchall()
+        )
         return [dict(row) for row in rows]
 
     def get_latest_date(self) -> str | None:
-        with connect(self.db_path) as conn:
-            row = conn.execute("SELECT max(date) AS latest_date FROM daily_kline").fetchone()
+        row = self._read(lambda conn: conn.execute("SELECT max(date) AS latest_date FROM daily_kline").fetchone())
         return row["latest_date"] if row else None
 
     def get_latest_name(self, code: str) -> str | None:
-        with connect(self.db_path) as conn:
-            row = conn.execute(
+        row = self._read(
+            lambda conn: conn.execute(
                 "SELECT name FROM daily_kline WHERE code = ? ORDER BY date DESC LIMIT 1",
                 (code,),
             ).fetchone()
+        )
         return row["name"] if row else None
-

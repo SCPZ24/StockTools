@@ -28,7 +28,19 @@ class DataService:
         return {"stocks": total, "rows": inserted}
 
     def update_daily(self) -> dict:
-        rows = AkshareProvider().fetch_daily_all()
+        trade_date = self._latest_possible_trade_date(date.today())
+        trade_date_text = trade_date.isoformat()
+        latest_date = self.kline_repo.get_latest_date()
+        if latest_date and latest_date >= trade_date_text:
+            return {"rows": 0, "date": latest_date, "status": "latest"}
+        rows = AkshareProvider().fetch_daily_all(trade_date)
         inserted = self.kline_repo.bulk_insert(rows)
-        return {"rows": inserted, "date": rows[0]["date"] if rows else None}
+        return {"rows": inserted, "date": rows[0]["date"] if rows else trade_date_text, "status": "updated" if rows else "empty"}
 
+    @staticmethod
+    def _latest_possible_trade_date(today: date) -> date:
+        if today.weekday() == 5:
+            return today - timedelta(days=1)
+        if today.weekday() == 6:
+            return today - timedelta(days=2)
+        return today

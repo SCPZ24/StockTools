@@ -22,6 +22,17 @@ DEFAULTS = {
 }
 
 
+def _percentile_linear(values: np.ndarray, q: float) -> float:
+    sorted_values = np.sort(values)
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    pos = (len(sorted_values) - 1) * q / 100
+    lower = int(pos)
+    upper = min(lower + 1, len(sorted_values) - 1)
+    weight = pos - lower
+    return float(sorted_values[lower] * (1 - weight) + sorted_values[upper] * weight)
+
+
 class BoxScanner(BaseScanner):
     name = "box"
     label = "低位箱体整理"
@@ -33,8 +44,11 @@ class BoxScanner(BaseScanner):
             return ScanResult(False, self.name)
 
         closes = data["close"].values
+        opens = data["open"].values
         highs = data["high"].values
         lows = data["low"].values
+        volumes = data["volume"].values
+        dates = data["date"].values
         n = len(closes)
         best = None
         best_score = 0.0
@@ -48,8 +62,8 @@ class BoxScanner(BaseScanner):
                 seg_low = lows[start_idx : end_idx + 1]
                 seg_close = closes[start_idx : end_idx + 1]
 
-                box_top = float(np.percentile(seg_high, 95))
-                box_bottom = float(np.percentile(seg_low, 5))
+                box_top = _percentile_linear(seg_high, 95)
+                box_bottom = _percentile_linear(seg_low, 5)
                 if box_bottom <= 0 or box_top <= box_bottom:
                     continue
                 height = (box_top - box_bottom) / box_bottom
@@ -81,14 +95,11 @@ class BoxScanner(BaseScanner):
                 if pos < p["position_min"]:
                     continue
 
-                yang_vol, yin_vol = [], []
-                for i in range(start_idx, end_idx + 1):
-                    row = data.iloc[i]
-                    if row["close"] >= row["open"]:
-                        yang_vol.append(float(row["volume"]))
-                    else:
-                        yin_vol.append(float(row["volume"]))
-                vr = float(np.mean(yang_vol) / np.mean(yin_vol)) if yang_vol and yin_vol else 1.0
+                seg_open = opens[start_idx : end_idx + 1]
+                seg_volume = volumes[start_idx : end_idx + 1]
+                yang_mask = seg_close >= seg_open
+                yin_mask = ~yang_mask
+                vr = float(np.mean(seg_volume[yang_mask]) / np.mean(seg_volume[yin_mask])) if yang_mask.any() and yin_mask.any() else 1.0
                 if vr < p["vol_ratio_min"]:
                     continue
 
@@ -115,8 +126,8 @@ class BoxScanner(BaseScanner):
                         "vol_ratio": round(vr, 2),
                         "decline_pct": round(decline * 100, 1),
                         "score": round(score, 1),
-                        "start_date": data.iloc[start_idx]["date"].strftime("%Y-%m-%d"),
-                        "end_date": data.iloc[end_idx]["date"].strftime("%Y-%m-%d"),
+                        "start_date": pd.Timestamp(dates[start_idx]).strftime("%Y-%m-%d"),
+                        "end_date": pd.Timestamp(dates[end_idx]).strftime("%Y-%m-%d"),
                     }
             if best:
                 break

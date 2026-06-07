@@ -32,6 +32,9 @@ def handle_init(args: argparse.Namespace) -> int:
 
 def handle_update(args: argparse.Namespace) -> int:
     result = DataService(db_path()).update_daily()
+    if result.get("status") == "latest":
+        print(f"交易数据未更新，已是最新交易日 {result['date']}，写入 0 条。")
+        return 0
     print(f"更新完成：日期 {result['date']}，写入 {result['rows']} 条。")
     return 0
 
