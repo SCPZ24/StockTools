@@ -10,11 +10,11 @@ from textual.widgets import DataTable, Static
 
 from stocktools.cli.cmd_find import format_indicator_summary
 from stocktools.scanners.registry import scanner_names
-from stocktools.tui.stock_style import stock_name_cell
 from stocktools.tui.widgets.detail_panel import DetailPanel
+from stocktools.tui.widgets.stock_table import StockDataTable
 
 
-class _ScanResultsTable(DataTable):
+class _ScanResultsTable(StockDataTable):
     """DataTable that does not bind left/right so arrows can switch scanners."""
 
     BINDINGS = [
@@ -103,7 +103,7 @@ class ScanTab(Widget):
         self._results.append(item)
         table.add_row(
             item["code"],
-            stock_name_cell(self.app._find_svc.kline_repo, item["code"], item.get("name", "")),
+            table.stock_name_cell(item["code"], item.get("name", "")),
             item.get("pattern", ""),
             format_indicator_summary(item, limit=2),
             key=item["code"],

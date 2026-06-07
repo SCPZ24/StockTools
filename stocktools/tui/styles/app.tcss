@@ -1,5 +1,5 @@
 /* ── StockTools TUI Theme ─────────────────────────────── */
-/* Uses transparent backgrounds so terminal opacity shows through. */
+/* Uses fully transparent background layers so terminal content shows through. */
 
 Screen {
     background: $background;
@@ -13,6 +13,7 @@ Screen {
     height: 1;
     background: $surface;
     color: $text-muted;
+    border-bottom: solid $border;
     padding: 0 1;
 }
 
@@ -22,6 +23,7 @@ Screen {
     dock: top;
     height: 1;
     background: $surface;
+    border-bottom: solid $border;
     padding: 0 1;
 }
 
@@ -32,6 +34,7 @@ Screen {
     height: 1;
     background: $surface;
     color: $text-muted;
+    border-top: solid $border;
     padding: 0 1;
 }
 
@@ -42,6 +45,7 @@ Screen {
     height: 1;
     background: $background;
     color: $text-muted;
+    border-top: solid $border;
     padding: 0 1;
 }
 
@@ -103,7 +107,8 @@ VerticalScroll {
 #scanner-selector {
     height: auto;
     padding: 0 1;
-    background: $surface;
+    background: $background;
+    border-bottom: solid $border;
 }
 
 .scanner-btn {
@@ -142,7 +147,7 @@ InputModal {
     height: auto;
     max-height: 12;
     background: $surface;
-    border: round $accent;
+    border: round $border;
     padding: 1 2;
 }
 
@@ -176,7 +181,7 @@ HistoryModal {
     height: 24;
     max-height: 80%;
     background: $surface;
-    border: round $accent;
+    border: round $border;
     padding: 1 2;
 }
 

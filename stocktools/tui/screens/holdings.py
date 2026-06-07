@@ -6,8 +6,8 @@ from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import DataTable, Static
 
-from stocktools.tui.stock_style import stock_name_cell
 from stocktools.tui.widgets.detail_panel import DetailPanel
+from stocktools.tui.widgets.stock_table import StockDataTable
 
 
 class HistoryModal(ModalScreen[None]):
@@ -52,7 +52,7 @@ class HoldingsTab(Widget):
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="content"):
-            yield DataTable(id="left-panel")
+            yield StockDataTable(id="left-panel")
             yield DetailPanel()
         yield Static(
             "[bright_blue]s[/]止损价  [bright_blue]t[/]目标价  [bright_blue]n[/]备注  "
@@ -72,7 +72,7 @@ class HoldingsTab(Widget):
         table = self.query_one(DataTable)
         table.clear()
         for item in self._items:
-            table.add_row(stock_name_cell(svc.kline_repo, item["code"], item["name"]), key=item["code"])
+            table.add_stock_row(item["code"], item["name"])
         if self._items:
             table.move_cursor(row=0)
             self._show_detail(0)

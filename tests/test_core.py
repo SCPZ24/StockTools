@@ -30,9 +30,12 @@ from stocktools.services.data_service import DataService
 from stocktools.services.find_service import FindService
 from stocktools.services.record_service import RecordService
 from stocktools.services.watch_service import WatchService
-from stocktools.tui.app import StockToolsApp
+from stocktools.tui.app import StockToolsApp, _ST_THEME
+from stocktools.tui.screens.holdings import HoldingsTab
 from stocktools.tui.screens.scan import ScanTab
+from stocktools.tui.screens.watchlist import WatchlistTab
 from stocktools.tui.stock_style import stock_name_cell
+from stocktools.tui.widgets.stock_table import StockDataTable
 from textual.widgets import DataTable
 
 
@@ -174,10 +177,24 @@ def test_stock_name_cell_uses_a_share_price_colors():
         def get_latest_close_direction(self, code: str) -> str | None:
             return self.direction
 
-    assert stock_name_cell(FakeRepo("up"), "600519", "贵州茅台").style == "red"
-    assert stock_name_cell(FakeRepo("down"), "600519", "贵州茅台").style == "green"
+    assert stock_name_cell(FakeRepo("up"), "600519", "贵州茅台").style == "#e60012"
+    assert stock_name_cell(FakeRepo("down"), "600519", "贵州茅台").style == "#009900"
     assert stock_name_cell(FakeRepo("flat"), "600519", "贵州茅台").style == "white"
     assert stock_name_cell(FakeRepo(None), "600519", "贵州茅台").style == "white"
+
+
+def test_tui_theme_uses_fully_transparent_background_layers():
+    assert _ST_THEME.background == "transparent"
+    assert _ST_THEME.surface == "transparent"
+    assert _ST_THEME.panel == "transparent"
+    assert _ST_THEME.boost == "transparent"
+    assert _ST_THEME.variables["block-cursor-background"] == "transparent"
+    assert _ST_THEME.variables["input-cursor-background"] == "transparent"
+    assert _ST_THEME.variables["input-selection-background"] == "transparent"
+    assert _ST_THEME.variables["screen-selection-background"] == "transparent"
+    assert _ST_THEME.variables["border"] == "white"
+    assert _ST_THEME.variables["border-blurred"] == "white"
+    assert _ST_THEME.ansi is True
 
 
 def test_connect_readonly_opens_database_as_immutable_uri(tmp_path: Path, monkeypatch):
@@ -390,6 +407,25 @@ def test_tui_scan_tab_append_scan_result_updates_results_and_table(tmp_path: Pat
             assert table.row_count == 1
 
     asyncio.run(run_check())
+
+
+def test_tui_stock_tables_share_stock_rendering_layer(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("STOCKTOOLS_HOME", str(tmp_path / "work"))
+
+    async def run_check():
+        app = StockToolsApp()
+        async with app.run_test():
+            assert isinstance(app.query_one(WatchlistTab).query_one("#left-panel"), StockDataTable)
+            assert isinstance(app.query_one(HoldingsTab).query_one("#left-panel"), StockDataTable)
+            assert isinstance(app.query_one(ScanTab).query_one("#scan-results"), StockDataTable)
+
+    asyncio.run(run_check())
+
+
+def test_tui_stock_tables_keep_cell_colors_under_cursor():
+    table = StockDataTable()
+
+    assert table.cursor_foreground_priority == "renderable"
 
 
 def test_services_scan_record_watch_alert(tmp_path: Path, monkeypatch):

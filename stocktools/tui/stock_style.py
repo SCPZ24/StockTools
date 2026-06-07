@@ -11,8 +11,8 @@ class CloseDirectionRepo(Protocol):
 
 
 _DIRECTION_STYLES = {
-    "up": "red",
-    "down": "green",
+    "up": "#e60012",
+    "down": "#009900",
     "flat": "white",
 }
 

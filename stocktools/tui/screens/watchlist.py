@@ -5,8 +5,8 @@ from textual.containers import Horizontal
 from textual.widget import Widget
 from textual.widgets import DataTable, Static
 
-from stocktools.tui.stock_style import stock_name_cell
 from stocktools.tui.widgets.detail_panel import DetailPanel
+from stocktools.tui.widgets.stock_table import StockDataTable
 
 
 class WatchlistTab(Widget):
@@ -19,7 +19,7 @@ class WatchlistTab(Widget):
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="content"):
-            yield DataTable(id="left-panel")
+            yield StockDataTable(id="left-panel")
             yield DetailPanel()
         yield Static(
             "[bright_blue]a[/]添加  [bright_blue]d[/]移除  [bright_blue]g[/]明天买  "
@@ -39,7 +39,7 @@ class WatchlistTab(Widget):
         table.clear()
         for item in self._items:
             buy_flag = "●" if item.get("buy_tomorrow") else ""
-            table.add_row(stock_name_cell(svc.kline_repo, item["code"], item["name"]), buy_flag, key=item["code"])
+            table.add_stock_row(item["code"], item["name"], buy_flag)
         if self._items:
             table.move_cursor(row=0)
             self._show_detail(0)

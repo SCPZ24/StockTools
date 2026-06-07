@@ -9,6 +9,7 @@ from textual.theme import Theme
 from textual.widgets import Static
 
 from stocktools.data.repos.ai_logs_repo import AiLogsRepo
+from stocktools.data.repos.kline_repo import KlineRepo
 from stocktools.infra.paths import Paths
 from stocktools.services.find_service import FindService
 from stocktools.services.hold_service import HoldService
@@ -40,21 +41,23 @@ _ST_THEME = Theme(
     warning="#f9e2af",
     error="#f38ba8",
     success="#a6e3a1",
-    surface="transparent",
     background="transparent",
+    surface="transparent",
+    panel="transparent",
+    boost="transparent",
     dark=True,
     ansi=True,
     variables={
-        "border": "ansi_bright_black",
-        "border-blurred": "ansi_black",
+        "border": "white",
+        "border-blurred": "white",
         "block-cursor-foreground": "ansi_black",
-        "block-cursor-background": "ansi_white",
-        "input-cursor-background": "ansi_black",
+        "block-cursor-background": "transparent",
+        "input-cursor-background": "transparent",
         "input-cursor-foreground": "ansi_bright_white",
         "input-cursor-text-style": "none",
-        "input-selection-background": "ansi_bright_blue",
+        "input-selection-background": "transparent",
         "input-selection-foreground": "ansi_black",
-        "screen-selection-background": "ansi_bright_blue",
+        "screen-selection-background": "transparent",
         "screen-selection-foreground": "ansi_black",
     },
 )
@@ -79,6 +82,7 @@ class StockToolsApp(App):
         self._record_svc = RecordService(db)
         self._hold_svc = HoldService(db)
         self._find_svc = FindService(db)
+        self._kline_repo = KlineRepo(db)
         self._watch_svc = None
         self._alert_svc = None
         self._ai_logs_repo = AiLogsRepo(db)
