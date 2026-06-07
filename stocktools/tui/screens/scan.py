@@ -5,6 +5,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widget import Widget
 from textual.widgets import Button, DataTable, Static
 
+from stocktools.cli.cmd_find import format_indicator_summary
 from stocktools.scanners.registry import scanner_names
 from stocktools.tui.widgets.detail_panel import DetailPanel
 
@@ -55,20 +56,38 @@ class ScanTab(Widget):
     async def _do_scan(self) -> None:
         svc = self.app._find_svc
         scanner_name = self._selected_scanner
-        results = await self.app.run_in_thread(lambda: svc.scan(scanner_name))
-        self._results = results
+        try:
+            await self.app.run_in_thread(lambda: self._scan_in_thread(svc, scanner_name))
+        except Exception as e:
+            self.app.notify(str(e), severity="error")
+        self._finish_scan()
+
+    def _scan_in_thread(self, svc, scanner_name: str) -> None:
+        for item in svc.iter_scan(scanner_name):
+            self.app.call_from_thread(self._append_scan_result, item)
+
+    def _append_scan_result(self, item: dict) -> None:
         table = self.query_one("#scan-results", DataTable)
-        table.clear()
-        for item in results:
-            indicators = {k: v for k, v in item.items() if k not in ("code", "name", "pattern")}
-            indicator_str = "  ".join(f"{k}={v:.2f}" if isinstance(v, float) else f"{k}={v}" for k, v in list(indicators.items())[:2])
-            table.add_row(item["code"], item.get("name", ""), item.get("pattern", ""), indicator_str, key=item["code"])
-        if results:
+        is_first = not self._results
+        self._results.append(item)
+        table.add_row(
+            item["code"],
+            item.get("name", ""),
+            item.get("pattern", ""),
+            format_indicator_summary(item, limit=2),
+            key=item["code"],
+        )
+        if is_first:
             table.move_cursor(row=0)
             self._show_detail(0)
+
+    def _finish_scan(self) -> None:
+        detail = self.query_one(DetailPanel)
+        if self._results:
+            self.app.notify(f"扫描完成，共 {len(self._results)} 条")
         else:
-            self.query_one(DetailPanel).clear()
-            self.query_one(DetailPanel).set_loading("未发现匹配股票")
+            detail.clear()
+            detail.set_loading("未发现匹配股票")
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.cursor_row is not None and event.cursor_row < len(self._results):

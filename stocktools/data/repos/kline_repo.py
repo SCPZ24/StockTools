@@ -72,10 +72,14 @@ class KlineRepo:
             return df
         return df.sort_values("date").reset_index(drop=True)
 
+    # Tradable A-share equity code prefixes (excludes indices like 399xxx).
+    STOCK_PREFIXES = ("000", "001", "002", "003", "300", "301", "302", "600", "601", "603", "605", "688", "689")
+
     def list_codes(self) -> list[dict]:
+        placeholders = ",".join("?" for _ in self.STOCK_PREFIXES)
         rows = self._read(
             lambda conn: conn.execute(
-                """
+                f"""
                 SELECT k.code, k.name
                 FROM daily_kline k
                 JOIN (
@@ -83,8 +87,12 @@ class KlineRepo:
                     FROM daily_kline
                     GROUP BY code
                 ) latest ON latest.code = k.code AND latest.latest_date = k.date
+                WHERE substr(k.code, 1, 3) IN ({placeholders})
+                  AND k.name NOT LIKE '%退%'
+                  AND k.name NOT LIKE '%指数%'
                 ORDER BY k.code
-                """
+                """,
+                self.STOCK_PREFIXES,
             ).fetchall()
         )
         return [dict(row) for row in rows]

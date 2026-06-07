@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import sqlite3
 import stat
@@ -15,6 +16,7 @@ import stocktools.ai.client as ai_client
 import stocktools.data.db as data_db
 import stocktools.data.providers.baostock_provider as baostock_provider
 import stocktools.services.data_service as data_service
+import stocktools.services.find_service as find_service_module
 from stocktools.ai.client import LLMClient
 from stocktools.data.repos.ai_logs_repo import AiLogsRepo
 from stocktools.data.repos.holdings_repo import HoldingsRepo
@@ -27,6 +29,9 @@ from stocktools.services.data_service import DataService
 from stocktools.services.find_service import FindService
 from stocktools.services.record_service import RecordService
 from stocktools.services.watch_service import WatchService
+from stocktools.tui.app import StockToolsApp
+from stocktools.tui.screens.scan import ScanTab
+from textual.widgets import DataTable
 
 
 def make_rows(code: str = "600519", name: str = "贵州茅台", days: int = 140) -> list[dict]:
@@ -163,20 +168,23 @@ def test_connect_readonly_opens_database_as_immutable_uri(tmp_path: Path, monkey
 
 
 def test_scanners_match_synthetic_data():
-    vol_rows = make_rows(days=100)
+    # 爆量吸筹: a stock that fell from ~10 to a flat low base ~7, then in the
+    # last few sessions absorbs heavy volume on up-days while price stays low.
+    vol_rows = make_rows(days=130)
     for i, row in enumerate(vol_rows):
-        if i >= 80:
-            row["volume"] = 1200
-            row["close"] = 12.0 + (i - 80) * 0.02
-            row["open"] = row["close"] - 0.05
-            row["high"] = row["close"] + 0.2
-            row["low"] = row["close"] - 0.2
-        if i >= 95:
-            row["volume"] = 3000
-            row["close"] = 12.4 + (i - 95) * 0.05
-            row["open"] = row["close"] - 0.05
-            row["high"] = row["close"] + 0.2
-            row["low"] = row["close"] - 0.2
+        if i < 60:
+            close = 10.0 - (i / 60) * 3.0  # decline 10 -> 7
+        else:
+            close = 7.0  # flat low base
+        volume = 1000
+        if i >= 125:  # last 5 days: explosive volume, contained price
+            close = 7.0 + (i - 124) * 0.06
+            volume = 3500
+        row["close"] = round(close, 2)
+        row["open"] = round(close - 0.05, 2)
+        row["high"] = round(close + 0.1, 2)
+        row["low"] = round(close - 0.1, 2)
+        row["volume"] = volume
     vol_df = pd.DataFrame(vol_rows)
     assert get_scanner("volume_absorb").detect(vol_df).matched
 
@@ -295,6 +303,57 @@ def test_update_daily_uses_previous_weekday_as_snapshot_date_on_weekend(tmp_path
     assert result == {"rows": 1, "date": "2026-06-05", "status": "updated"}
     assert list(df["date"]) == ["2026-06-04", "2026-06-05"]
     assert float(df.iloc[-1]["close"]) == 12.34
+
+
+def test_find_service_iter_scan_yields_first_match_before_scanning_all(monkeypatch):
+    calls = []
+
+    class FakeRepo:
+        def list_codes(self):
+            return [
+                {"code": "600001", "name": "先命中"},
+                {"code": "600002", "name": "后扫描"},
+            ]
+
+        def get_klines(self, code, n_days=None):
+            calls.append(code)
+            return pd.DataFrame(make_rows(code, code, 140))
+
+    class FakeScanner:
+        def detect(self, df, **options):
+            from stocktools.scanners.results import ScanResult
+
+            return ScanResult(True, "fake", {"score": len(calls)})
+
+    monkeypatch.setattr(find_service_module, "get_scanner", lambda name: FakeScanner())
+    service = FindService(":memory:")
+    service.kline_repo = FakeRepo()
+
+    stream = service.iter_scan("fake")
+    first = next(stream)
+
+    assert first == {"code": "600001", "name": "先命中", "pattern": "fake", "score": 1}
+    assert calls == ["600001"]
+    assert list(stream)[0]["code"] == "600002"
+
+
+def test_tui_scan_tab_append_scan_result_updates_results_and_table(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("STOCKTOOLS_HOME", str(tmp_path / "work"))
+
+    async def run_check():
+        app = StockToolsApp()
+        async with app.run_test():
+            tab = app.query_one(ScanTab)
+            app._switch_tab(2)
+            item = {"code": "600519", "name": "贵州茅台", "pattern": "box", "score": 12.3, "price": 10.0}
+
+            tab._append_scan_result(item)
+
+            table = tab.query_one("#scan-results", DataTable)
+            assert tab._results == [item]
+            assert table.row_count == 1
+
+    asyncio.run(run_check())
 
 
 def test_services_scan_record_watch_alert(tmp_path: Path, monkeypatch):

@@ -4,7 +4,6 @@ import argparse
 
 from stocktools.cli.common import add_thresholds, compact_options, db_path
 from stocktools.output.csv_writer import write_csv
-from stocktools.output.display import print_rows
 from stocktools.scanners.registry import scanner_names
 from stocktools.services.find_service import FindService
 
@@ -28,6 +27,20 @@ THRESHOLDS = [
 ]
 
 
+def format_indicator_summary(item: dict, limit: int | None = None) -> str:
+    indicators = {k: v for k, v in item.items() if k not in ("code", "name", "pattern")}
+    pairs = list(indicators.items()) if limit is None else list(indicators.items())[:limit]
+    return "  ".join(f"{k}={v:.2f}" if isinstance(v, float) else f"{k}={v}" for k, v in pairs)
+
+
+def format_stream_row(item: dict) -> str:
+    parts = [item["code"], item.get("name", ""), item.get("pattern", "")]
+    summary = format_indicator_summary(item)
+    if summary:
+        parts.append(summary)
+    return "  ".join(str(part) for part in parts)
+
+
 def register(subparsers) -> None:
     parser = subparsers.add_parser("find", help="执行形态扫描")
     parser.add_argument("scanner", choices=scanner_names())
@@ -38,9 +51,14 @@ def register(subparsers) -> None:
 
 def handle(args: argparse.Namespace) -> int:
     options = compact_options(args, THRESHOLDS)
-    rows = FindService(db_path()).scan(args.scanner, options)
-    print_rows(rows, "没有找到符合条件的股票。")
+    rows = []
+    for item in FindService(db_path()).iter_scan(args.scanner, options):
+        rows.append(item)
+        print(format_stream_row(item), flush=True)
+    if not rows:
+        print("没有找到符合条件的股票。")
     if args.csv_path and rows:
         write_csv(rows, args.csv_path)
         print(f"CSV 已导出: {args.csv_path}")
+    print(f"扫描完成，共 {len(rows)} 条。")
     return 0

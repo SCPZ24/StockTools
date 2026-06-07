@@ -125,6 +125,9 @@ def test_cli_record_hold_find_csv_and_code_validation(tmp_path: Path):
         home,
     )
     assert scan.returncode == 0, scan.stderr
+    first_line = next(line for line in scan.stdout.splitlines() if line.strip())
+    assert first_line.startswith("600519  贵州茅台  independent")
+    assert "code" not in first_line.lower()
     assert scan_csv.exists()
 
 

@@ -9,16 +9,21 @@ from .utils import weekly_df
 
 
 DEFAULTS = {
-    "min_weeks": 10,
+    "min_weeks": 12,
     "max_weeks": 52,
-    "slope_min": 0.002,
+    "slope_min": 0.003,
     "slope_max": 0.03,
     "width_min": 0.08,
     "width_max": 0.35,
-    "r_squared_min": 0.60,
-    "parallelism": 0.5,
-    "position_max": 0.6,
+    "r_squared_min": 0.75,
+    "r_squared_hi_min": 0.55,
+    "parallelism": 0.30,
+    "position_max": 0.55,
     "zigzag_pct": 0.05,
+    "min_support": 3,
+    "min_resistance": 3,
+    "containment_min": 0.85,
+    "tolerance": 0.03,
 }
 
 
@@ -82,15 +87,18 @@ class ChannelScanner(BaseScanner):
         for length in range(min(p["max_weeks"], n), p["min_weeks"] - 1, -2):
             start = n - length
             minima, maxima = _zigzag_pivots(highs[start:], lows[start:], p["zigzag_pct"])
-            if len(minima) < 3 or len(maxima) < 2:
+            if len(minima) < p["min_support"] or len(maxima) < p["min_resistance"]:
                 continue
             slope_lo, intercept_lo, r2_lo = _fit_line(minima)
-            slope_hi, intercept_hi, _ = _fit_line(maxima)
+            slope_hi, intercept_hi, r2_hi = _fit_line(maxima)
             if slope_lo is None or slope_hi is None or slope_lo <= 0 or slope_hi <= 0:
                 continue
             avg_price = float(np.mean(closes[start:]))
             norm_slope = slope_lo / avg_price
-            if not (p["slope_min"] <= norm_slope <= p["slope_max"]) or r2_lo < p["r_squared_min"]:
+            if not (p["slope_min"] <= norm_slope <= p["slope_max"]):
+                continue
+            # Both rails must be well-defined straight lines, not a loose scatter.
+            if r2_lo < p["r_squared_min"] or r2_hi < p["r_squared_hi_min"]:
                 continue
             ratio = slope_hi / slope_lo if abs(slope_lo) > 1e-10 else 999
             if not (1 - p["parallelism"] <= ratio <= 1 + p["parallelism"]):
@@ -107,8 +115,27 @@ class ChannelScanner(BaseScanner):
             pos = (cur - lo_val) / (hi_val - lo_val)
             if pos > p["position_max"] or pos < -0.05:
                 continue
+
+            # Price must actually live inside the channel for most of the window.
+            idx = np.arange(length, dtype=float)
+            lo_line = slope_lo * idx + intercept_lo
+            hi_line = slope_hi * idx + intercept_hi
+            tol = p["tolerance"]
+            seg_close = closes[start:]
+            inside = np.sum((seg_close >= lo_line * (1 - tol)) & (seg_close <= hi_line * (1 + tol)))
+            containment = inside / length
+            if containment < p["containment_min"]:
+                continue
+
             annual_return = norm_slope * 52
-            score = (1 - pos) * 30 + min(r2_lo, 0.99) * 25 + min(len(minima), 5) * 8 + min(annual_return, 1.0) * 20
+            score = (
+                (1 - pos) * 25
+                + min(r2_lo, 0.99) * 20
+                + min(r2_hi, 0.99) * 10
+                + min(len(minima), 5) * 6
+                + min(annual_return, 1.0) * 20
+                + containment * 15
+            )
             if score > best_score:
                 best_score = score
                 best = {
@@ -120,6 +147,8 @@ class ChannelScanner(BaseScanner):
                     "weeks": length,
                     "annual_return_pct": round(annual_return * 100, 1),
                     "r_squared": round(r2_lo, 3),
+                    "r_squared_hi": round(r2_hi, 3),
+                    "containment_pct": round(containment * 100, 1),
                     "support_touches": len(minima),
                     "resistance_touches": len(maxima),
                     "score": round(score, 1),
