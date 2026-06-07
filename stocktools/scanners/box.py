@@ -5,23 +5,26 @@ import pandas as pd
 
 from .base import BaseScanner
 from .results import ScanResult
-from .utils import weekly_df
+from .utils import normalize_df
 
 
 DEFAULTS = {
-    "min_weeks": 8,
-    "max_weeks": 40,
+    "min_days": 40,
+    "max_days": 140,
+    "start_stride": 5,
+    "end_slack": 3,
+    "prior_days": 20,
     "height_min": 0.05,
-    "height_max": 0.25,
-    "min_touches": 3,
-    "touch_tolerance": 0.03,
-    "decline_min": 0.18,
-    "position_min": 0.50,
-    "position_max": 1.10,
-    "vol_ratio_min": 0.7,
-    "containment_min": 0.85,
-    "flat_max": 0.12,
-    "range_pos_max": 0.55,
+    "height_max": 0.22,
+    "min_touches": 5,
+    "touch_tolerance": 0.02,
+    "decline_min": 0.20,
+    "position_min": 0.55,
+    "position_max": 1.08,
+    "vol_ratio_min": 0.8,
+    "containment_min": 0.90,
+    "flat_max": 0.10,
+    "range_pos_max": 0.50,
 }
 
 
@@ -40,7 +43,7 @@ def _drift(seg_close: np.ndarray) -> float:
     """Total trend drift across the segment, normalised by mean price.
 
     A genuine box is horizontal, so |drift| should be small. A value of
-    0.12 means the regression line rises/falls 12% of price end-to-end."""
+    0.10 means the regression line rises/falls 10% of price end-to-end."""
     n = len(seg_close)
     if n < 3:
         return 0.0
@@ -61,9 +64,11 @@ class BoxScanner(BaseScanner):
 
     def detect(self, df: pd.DataFrame, **kwargs) -> ScanResult:
         p = {**DEFAULTS, **kwargs}
-        data = weekly_df(df)
-        # Need enough history to both form a box *and* confirm a prior decline.
-        if len(data) < p["min_weeks"] + 4:
+        data = normalize_df(df)
+        min_days = int(p["min_days"])
+        prior = int(p["prior_days"])
+        # Need a box window plus prior history to confirm a real decline into it.
+        if len(data) < min_days + prior:
             return ScanResult(False, self.name)
 
         closes = data["close"].values
@@ -73,20 +78,22 @@ class BoxScanner(BaseScanner):
         volumes = data["volume"].values
         dates = data["date"].values
         n = len(closes)
+        stride = int(p["start_stride"])
         best = None
         best_score = 0.0
 
-        for end_idx in range(n - 1, p["min_weeks"] - 1, -1):
-            if n - 1 - end_idx > 4:
+        for end_idx in range(n - 1, n - 1 - int(p["end_slack"]), -1):
+            if end_idx < min_days + prior - 1:
                 break
-            # Full-history extremes up to this point, to locate the box within
-            # the broader range ("低位" must mean low vs. the year, not just local).
+            # Full-history extremes up to this point locate the box within the
+            # broader range — "低位" must mean low vs. the year, not just local.
             hist_high = float(np.max(highs[: end_idx + 1]))
             hist_low = float(np.min(lows[: end_idx + 1]))
             hist_span = hist_high - hist_low
 
-            # Require at least 4 weeks of prior history before the box starts.
-            for start_idx in range(max(4, end_idx - p["max_weeks"]), end_idx - p["min_weeks"] + 1):
+            lo_start = max(prior, end_idx - int(p["max_days"]))
+            hi_start = end_idx - min_days + 1
+            for start_idx in range(lo_start, hi_start + 1, stride):
                 box_len = end_idx - start_idx + 1
                 seg_high = highs[start_idx : end_idx + 1]
                 seg_low = lows[start_idx : end_idx + 1]
@@ -142,8 +149,7 @@ class BoxScanner(BaseScanner):
 
                 score = (
                     pos * 25
-                    + min(top_touches + bot_touches, 10) * 5
-                    + max(0, 30 - abs(box_len - 16)) * 1.2
+                    + min(top_touches + bot_touches, 20) * 3
                     + min(vr, 2.0) * 10
                     + min(decline, 0.5) * 50
                     + containment * 25
@@ -157,7 +163,7 @@ class BoxScanner(BaseScanner):
                         "top": round(box_top, 2),
                         "height_pct": round(height * 100, 1),
                         "position_pct": round(pos * 100, 1),
-                        "weeks": box_len,
+                        "days": box_len,
                         "top_touches": top_touches,
                         "bottom_touches": bot_touches,
                         "containment_pct": round(containment * 100, 1),

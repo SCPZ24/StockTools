@@ -34,5 +34,7 @@ class FindService:
             if result.matched:
                 yield {"code": stock["code"], "name": stock["name"], "pattern": result.pattern, **result.indicators}
 
-    def scan(self, scanner_name: str, options: dict | None = None) -> list[dict]:
-        return list(self.iter_scan(scanner_name, options))
+    def scan(self, scanner_name: str, options: dict | None = None, limit: int | None = None) -> list[dict]:
+        rows = list(self.iter_scan(scanner_name, options))
+        rows.sort(key=lambda r: float(r.get("score", 0)), reverse=True)
+        return rows[:limit] if limit else rows

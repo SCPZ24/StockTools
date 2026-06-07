@@ -10,10 +10,10 @@ from .utils import max_drawdown, normalize_df
 
 DEFAULTS = {
     "min_days": 60,
-    "excess_return_min": 0.15,
-    "drawdown_max": 0.20,
-    "r_squared_min": 0.65,
-    "up_fraction_min": 0.52,
+    "excess_return_min": 0.20,
+    "drawdown_max": 0.18,
+    "r_squared_min": 0.72,
+    "up_fraction_min": 0.55,
     "vol_expand_max": 1.6,
     "baseline_return": 0.0,
 }

@@ -5,25 +5,27 @@ import pandas as pd
 
 from .base import BaseScanner
 from .results import ScanResult
-from .utils import weekly_df
+from .utils import normalize_df
 
 
 DEFAULTS = {
-    "min_weeks": 12,
-    "max_weeks": 52,
-    "slope_min": 0.003,
-    "slope_max": 0.03,
+    "min_days": 60,
+    "max_days": 240,
+    "length_stride": 10,
+    "slope_min": 0.0006,
+    "slope_max": 0.006,
     "width_min": 0.08,
-    "width_max": 0.35,
-    "r_squared_min": 0.75,
-    "r_squared_hi_min": 0.55,
-    "parallelism": 0.30,
-    "position_max": 0.55,
-    "zigzag_pct": 0.05,
-    "min_support": 3,
+    "width_max": 0.30,
+    "r_squared_min": 0.78,
+    "r_squared_hi_min": 0.60,
+    "parallelism": 0.28,
+    "position_max": 0.50,
+    "zigzag_pct": 0.06,
+    "min_support": 4,
     "min_resistance": 3,
-    "containment_min": 0.85,
+    "containment_min": 0.88,
     "tolerance": 0.03,
+    "trading_days": 252,
 }
 
 
@@ -75,8 +77,8 @@ class ChannelScanner(BaseScanner):
 
     def detect(self, df: pd.DataFrame, **kwargs) -> ScanResult:
         p = {**DEFAULTS, **kwargs}
-        data = weekly_df(df)
-        if len(data) < p["min_weeks"]:
+        data = normalize_df(df)
+        if len(data) < p["min_days"]:
             return ScanResult(False, self.name)
         closes = data["close"].values
         highs = data["high"].values
@@ -84,7 +86,7 @@ class ChannelScanner(BaseScanner):
         n = len(closes)
         best = None
         best_score = 0.0
-        for length in range(min(p["max_weeks"], n), p["min_weeks"] - 1, -2):
+        for length in range(min(p["max_days"], n), p["min_days"] - 1, -int(p["length_stride"])):
             start = n - length
             minima, maxima = _zigzag_pivots(highs[start:], lows[start:], p["zigzag_pct"])
             if len(minima) < p["min_support"] or len(maxima) < p["min_resistance"]:
@@ -127,12 +129,12 @@ class ChannelScanner(BaseScanner):
             if containment < p["containment_min"]:
                 continue
 
-            annual_return = norm_slope * 52
+            annual_return = norm_slope * p["trading_days"]
             score = (
                 (1 - pos) * 25
                 + min(r2_lo, 0.99) * 20
                 + min(r2_hi, 0.99) * 10
-                + min(len(minima), 5) * 6
+                + min(len(minima), 6) * 5
                 + min(annual_return, 1.0) * 20
                 + containment * 15
             )
@@ -144,7 +146,7 @@ class ChannelScanner(BaseScanner):
                     "upper_rail": round(hi_val, 2),
                     "width_pct": round(width * 100, 1),
                     "position_pct": round(pos * 100, 1),
-                    "weeks": length,
+                    "days": length,
                     "annual_return_pct": round(annual_return * 100, 1),
                     "r_squared": round(r2_lo, 3),
                     "r_squared_hi": round(r2_hi, 3),
@@ -156,4 +158,3 @@ class ChannelScanner(BaseScanner):
                     "end_date": data.iloc[-1]["date"].strftime("%Y-%m-%d"),
                 }
         return ScanResult(bool(best), self.name, best or {})
-

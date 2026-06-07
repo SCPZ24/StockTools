@@ -11,13 +11,13 @@ from .utils import normalize_df
 DEFAULTS = {
     "lookback": 5,
     "baseline_days": 60,
-    "vol_spike_min": 2.5,
-    "strong_single_ratio": 3.5,
+    "vol_spike_min": 3.0,
+    "strong_single_ratio": 4.0,
     "min_spike_days": 1,
     "gain_min": 0.01,
-    "max_gain": 0.15,
+    "max_gain": 0.12,
     "position_window": 120,
-    "position_max": 0.45,
+    "position_max": 0.40,
     "held_tolerance": 0.03,
 }
 
