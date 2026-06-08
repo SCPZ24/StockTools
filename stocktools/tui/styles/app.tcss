@@ -1,8 +1,10 @@
 /* ── StockTools TUI Theme ─────────────────────────────── */
-/* Uses fully transparent background layers so terminal content shows through. */
+/* Every surface is fully transparent so the terminal shows through; only text
+   carries color. No borders on the single-row docked bars — a border would
+   consume their one content row and hide the text. */
 
 Screen {
-    background: $background;
+    background: transparent;
     color: $text;
 }
 
@@ -11,9 +13,8 @@ Screen {
 #hint-bar {
     dock: top;
     height: 1;
-    background: $surface;
+    background: transparent;
     color: $text-muted;
-    border-bottom: solid $border;
     padding: 0 1;
 }
 
@@ -22,8 +23,7 @@ Screen {
 #tab-bar {
     dock: top;
     height: 1;
-    background: $surface;
-    border-bottom: solid $border;
+    background: transparent;
     padding: 0 1;
 }
 
@@ -32,9 +32,8 @@ Screen {
 #status-bar {
     dock: bottom;
     height: 1;
-    background: $surface;
+    background: transparent;
     color: $text-muted;
-    border-top: solid $border;
     padding: 0 1;
 }
 
@@ -43,9 +42,8 @@ Screen {
 .page-hints {
     dock: bottom;
     height: 1;
-    background: $background;
+    background: transparent;
     color: $text-muted;
-    border-top: solid $border;
     padding: 0 1;
 }
 
@@ -53,53 +51,54 @@ Screen {
 
 #content {
     layout: horizontal;
-    background: $background;
+    background: transparent;
 }
 
 #left-panel {
     width: 1fr;
     min-width: 24;
     max-width: 40;
-    border-right: solid $border;
-    background: $background;
+    background: transparent;
 }
 
 #right-panel {
     width: 3fr;
     padding: 1 2;
-    background: $background;
+    background: transparent;
 }
 
 /* ── DataTable styling ────────────────────────────────── */
 
 DataTable {
     height: 1fr;
-    background: $background;
+    background: transparent;
 }
 
 DataTable > .datatable--header {
-    background: $surface;
+    background: transparent;
     color: $accent;
     text-style: bold;
 }
 
+/* Selected row: keep the background transparent and mark the selection with a
+   text style only, so no opaque bar breaks the transparency. */
 DataTable > .datatable--cursor {
-    background: $surface;
-    color: $text;
+    background: transparent;
+    text-style: bold underline;
 }
 
 DataTable > .datatable--hover {
-    background: $surface;
+    background: transparent;
 }
 
 /* ── Detail panel ─────────────────────────────────────── */
 
 DetailPanel {
-    background: $background;
+    background: transparent;
 }
 
 VerticalScroll {
-    background: $background;
+    background: transparent;
 }
 
 /* ── Scanner selector ─────────────────────────────────── */
@@ -107,15 +106,14 @@ VerticalScroll {
 #scanner-selector {
     height: auto;
     padding: 0 1;
-    background: $background;
-    border-bottom: solid $border;
+    background: transparent;
 }
 
 .scanner-btn {
     margin: 0 1 1 0;
     min-width: 8;
     height: 1;
-    background: $background;
+    background: transparent;
     color: $text-muted;
     border: none;
 }
@@ -136,6 +134,8 @@ ScanTab #left-panel {
 }
 
 /* ── Input modal ──────────────────────────────────────── */
+/* Modals keep a (white) border so the dialog stays delineated over the
+   otherwise transparent content behind it. */
 
 InputModal {
     align: center middle;
@@ -146,7 +146,7 @@ InputModal {
     max-width: 80%;
     height: auto;
     max-height: 12;
-    background: $surface;
+    background: transparent;
     border: round $border;
     padding: 1 2;
 }
@@ -180,7 +180,7 @@ HistoryModal {
     max-width: 90%;
     height: 24;
     max-height: 80%;
-    background: $surface;
+    background: transparent;
     border: round $border;
     padding: 1 2;
 }
@@ -195,5 +195,5 @@ HistoryModal {
 /* ── Tab widgets ──────────────────────────────────────── */
 
 WatchlistTab, HoldingsTab, ScanTab {
-    background: $background;
+    background: transparent;
 }

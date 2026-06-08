@@ -46,7 +46,12 @@ _ST_THEME = Theme(
     panel="transparent",
     boost="transparent",
     dark=True,
-    ansi=True,
+    # Keep ansi=False (the default) so the theme generates $ansi-background etc.
+    # (an ansi=True theme omits them, and Screen/Button/Toast reference them ->
+    # "undefined variable" parse errors). Real terminal transparency instead comes
+    # from App.ansi_color = True (see __init__): that makes transparent backgrounds
+    # render as the terminal's default cell (no background escape), so the terminal
+    # shows through. The red/green stock colors stay exact truecolor.
     variables={
         "border": "white",
         "border-blurred": "white",
@@ -66,7 +71,6 @@ _ST_THEME = Theme(
 class StockToolsApp(App):
 
     CSS_PATH = "styles/app.tcss"
-    theme = "stocktools"
 
     BINDINGS = [
         Binding("q", "quit", "退出", show=False),
@@ -74,7 +78,20 @@ class StockToolsApp(App):
 
     def __init__(self) -> None:
         super().__init__()
+        # Register the theme *before* selecting it. The stylesheet captures CSS
+        # variables ($background, $surface, $border, …) when the App is first
+        # constructed, so the theme must be registered and then assigned here —
+        # assigning triggers a CSS refresh that re-resolves variables against our
+        # transparent theme. Setting it as a class attribute would not work: at
+        # construction time the theme isn't registered yet (falls back to the
+        # opaque textual-dark theme) and the value never "changes", so the refresh
+        # never fires.
         self.register_theme(_ST_THEME)
+        self.theme = "stocktools"
+        # Render in native ANSI mode: transparent backgrounds then map to the
+        # terminal's default cell (no background escape emitted) instead of being
+        # flattened to opaque black, so the terminal background shows through.
+        self.ansi_color = True
         paths = Paths.resolve()
         paths.init_databases()
         db = paths.database_path
