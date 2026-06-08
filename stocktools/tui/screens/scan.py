@@ -8,8 +8,8 @@ from textual.containers import Horizontal, Vertical
 from textual.widget import Widget
 from textual.widgets import DataTable, Static
 
-from stocktools.cli.cmd_find import format_indicator_summary
 from stocktools.scanners.registry import scanner_names
+from stocktools.tui.stock_style import stock_name_cell
 from stocktools.tui.widgets.detail_panel import DetailPanel
 from stocktools.tui.widgets.stock_table import StockDataTable
 
@@ -56,7 +56,7 @@ class ScanTab(Widget):
     def on_mount(self) -> None:
         table = self.query_one("#scan-results", DataTable)
         table.cursor_type = "row"
-        table.add_columns("代码", "名称", "形态", "关键指标")
+        table.add_columns("名称", "形态")
         self._render_scanner_bar()
 
     def _render_scanner_bar(self) -> None:
@@ -101,11 +101,12 @@ class ScanTab(Widget):
         table = self.query_one("#scan-results", DataTable)
         is_first = not self._results
         self._results.append(item)
+        name_cell = stock_name_cell(
+            self.app._find_svc.kline_repo, item["code"], item.get("name", ""),
+        )
         table.add_row(
-            item["code"],
-            table.stock_name_cell(item["code"], item.get("name", "")),
+            name_cell,
             item.get("pattern", ""),
-            format_indicator_summary(item, limit=2),
             key=item["code"],
         )
         if is_first:
