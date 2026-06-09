@@ -72,6 +72,8 @@ Screen {
 DataTable {
     height: 1fr;
     background: transparent;
+    /* No vertical scrollbar on the stock lists — arrow keys still scroll. */
+    scrollbar-size-vertical: 0;
 }
 
 DataTable > .datatable--header {

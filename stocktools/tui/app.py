@@ -5,8 +5,9 @@ import asyncio
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.events import Key
+from textual.css.query import NoMatches
 from textual.theme import Theme
-from textual.widgets import Static
+from textual.widgets import DataTable, Static
 
 from stocktools.data.repos.ai_logs_repo import AiLogsRepo
 from stocktools.data.repos.kline_repo import KlineRepo
@@ -20,7 +21,7 @@ from stocktools.tui.screens.watchlist import WatchlistTab
 from stocktools.tui.widgets.input_modal import InputModal
 
 
-TAB_NAMES = ["关注池", "持仓", "扫描"]
+TAB_NAMES = ["关注", "持仓", "扫描"]
 
 
 def _validate_price(value: str) -> str | None:
@@ -151,6 +152,19 @@ class StockToolsApp(App):
         )
         self._tabs[idx].refresh_data()
         self._update_status_bar()
+        self._focus_current_table()
+
+    def _focus_current_table(self) -> None:
+        """Focus the active tab's table so arrow keys work right after a Tab
+        switch — otherwise the table has a highlighted row but no keyboard focus,
+        forcing the user to click it with the mouse first."""
+        try:
+            table = self._tabs[self._current_tab].query_one(DataTable)
+        except NoMatches:
+            return
+        if table.row_count and table.cursor_row is None:
+            table.move_cursor(row=0)
+        table.focus()
 
     def _update_status_bar(self) -> None:
         watchlist_count = len(self._record_svc.list_all())
@@ -163,6 +177,14 @@ class StockToolsApp(App):
         return self._tabs[self._current_tab]
 
     def on_key(self, event: Key) -> None:
+        # Ignore global page keys while a modal is open. A modal (InputModal /
+        # HistoryModal) is a separate screen pushed on top, so its key events
+        # bubble up to App.on_key. Without this guard, pressing Enter to submit
+        # the "添加股票" input also fired the watchlist's Enter handler
+        # (转入持仓), so the stock was never actually added. The base UI screen
+        # is screen_stack[0]; any extra entry means a modal is active.
+        if len(self.screen_stack) > 1:
+            return
         if event.key == "tab":
             self._switch_tab((self._current_tab + 1) % len(self._tabs))
             event.prevent_default()

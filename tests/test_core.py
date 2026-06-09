@@ -14,6 +14,7 @@ import pandas as pd
 from stocktools.config.model_config_repo import ModelConfigRepo
 import stocktools.ai.client as ai_client
 import stocktools.data.db as data_db
+import stocktools.data.providers.akshare_provider as akshare_provider
 import stocktools.data.providers.baostock_provider as baostock_provider
 import stocktools.services.data_service as data_service
 import stocktools.services.find_service as find_service_module
@@ -290,6 +291,121 @@ def test_baostock_list_stocks_falls_back_from_empty_non_trading_day(monkeypatch)
         {"code": "000001", "bs_code": "sz.000001", "name": "平安银行"},
     ]
     assert queried_days == ["2026-06-06", "2026-06-05"]
+
+
+def test_akshare_provider_falls_back_to_direct_request_after_env_proxy_failure(monkeypatch):
+    sessions = []
+    requested = []
+
+    class FakeResponse:
+        def json(self):
+            return {
+                "data": {
+                    "total": 2,
+                    "diff": [
+                        {"f12": "600519", "f14": "贵州茅台", "f17": 10, "f2": 11, "f15": 12, "f16": 9, "f5": 1000},
+                        {"f12": "000001", "f14": "平安银行", "f17": 20, "f2": 21, "f15": 22, "f16": 19, "f5": 2000},
+                    ],
+                }
+            }
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def __init__(self):
+            self.trust_env = True
+            sessions.append(self)
+
+        def get(self, url, params, timeout, headers=None):
+            requested.append((url, dict(params), timeout, self.trust_env))
+            if self.trust_env:
+                raise akshare_provider.requests.exceptions.ProxyError("bad proxy")
+            return FakeResponse()
+
+    monkeypatch.setattr(akshare_provider.requests, "Session", FakeSession)
+
+    rows = akshare_provider.AkshareProvider().fetch_daily_all(date(2026, 6, 9))
+
+    assert [session.trust_env for session in sessions] == [True, False]
+    assert requested[0][3] is True
+    assert requested[1][3] is False
+    assert requested[1][0] == "https://82.push2.eastmoney.com/api/qt/clist/get"
+    assert requested[1][1]["fs"] == "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048"
+    assert rows == [
+        {"code": "600519", "name": "贵州茅台", "date": "2026-06-09", "open": 10.0, "close": 11.0, "high": 12.0, "low": 9.0, "volume": 1000.0},
+        {"code": "000001", "name": "平安银行", "date": "2026-06-09", "open": 20.0, "close": 21.0, "high": 22.0, "low": 19.0, "volume": 2000.0},
+    ]
+
+
+def test_akshare_provider_fetches_all_eastmoney_pages(monkeypatch):
+    requested_pages = []
+
+    def item(code):
+        return {"f12": code, "f14": f"股票{code}", "f17": 10, "f2": 11, "f15": 12, "f16": 9, "f5": 1000}
+
+    class FakeResponse:
+        def __init__(self, page):
+            self.page = page
+
+        def json(self):
+            return {
+                "data": {
+                    "total": 101,
+                    "diff": [item("600001")] if self.page == "1" else [item("600002")],
+                }
+            }
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        trust_env = False
+
+        def get(self, url, params, timeout, headers=None):
+            requested_pages.append(params["pn"])
+            return FakeResponse(params["pn"])
+
+    monkeypatch.setattr(akshare_provider.requests, "Session", FakeSession)
+
+    rows = akshare_provider.AkshareProvider().fetch_daily_all(date(2026, 6, 9))
+
+    assert requested_pages == ["1", "2"]
+    assert [row["code"] for row in rows] == ["600001", "600002"]
+
+
+def test_akshare_provider_falls_back_to_next_eastmoney_host(monkeypatch):
+    requested_urls = []
+
+    class FakeResponse:
+        def json(self):
+            return {
+                "data": {
+                    "total": 1,
+                    "diff": [{"f12": "600519", "f14": "贵州茅台", "f17": 10, "f2": 11, "f15": 12, "f16": 9, "f5": 1000}],
+                }
+            }
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        trust_env = False
+
+        def get(self, url, params, timeout, headers=None):
+            requested_urls.append((url, headers))
+            if len(requested_urls) <= 2:
+                raise akshare_provider.requests.exceptions.ConnectionError("first host closed")
+            return FakeResponse()
+
+    monkeypatch.setattr(akshare_provider.requests, "Session", FakeSession)
+
+    rows = akshare_provider.AkshareProvider().fetch_daily_all(date(2026, 6, 9))
+
+    assert requested_urls[0][0] == requested_urls[1][0]
+    assert requested_urls[1][0] != requested_urls[2][0]
+    assert requested_urls[2][1]["Referer"] == "https://quote.eastmoney.com/center/gridlist.html"
+    assert rows[0]["code"] == "600519"
 
 
 def test_box_scanner_handles_full_market_scale_without_pandas_hot_loop():
