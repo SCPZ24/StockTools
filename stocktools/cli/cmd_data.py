@@ -31,9 +31,15 @@ def handle_init(args: argparse.Namespace) -> int:
 
 
 def handle_update(args: argparse.Namespace) -> int:
-    result = DataService(db_path()).update_daily()
+    def notify_fallback() -> None:
+        print("akshare 行情接口失败，回退到逐只抓取当前交易日（约 5000 次请求，请稍候）……")
+
+    result = DataService(db_path()).update_daily(on_fallback=notify_fallback)
     if result.get("status") == "latest":
         print(f"交易数据未更新，已是最新交易日 {result['date']}，写入 0 条。")
+        return 0
+    if result.get("status") == "fallback":
+        print(f"回退更新完成：日期 {result['date']}，扫描 {result['stocks']} 只，写入 {result['rows']} 条。")
         return 0
     print(f"更新完成：日期 {result['date']}，写入 {result['rows']} 条。")
     return 0

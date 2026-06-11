@@ -474,6 +474,52 @@ def test_update_daily_uses_previous_weekday_as_snapshot_date_on_weekend(tmp_path
     assert float(df.iloc[-1]["close"]) == 12.34
 
 
+def test_update_daily_falls_back_to_per_stock_when_akshare_is_blocked(tmp_path: Path, monkeypatch):
+    paths = init_paths(tmp_path, monkeypatch)
+    rows = make_rows(days=1)
+    rows[0]["date"] = "2026-06-04"
+    KlineRepo(paths.database_path).bulk_insert(rows)
+
+    class FakeDate:
+        @classmethod
+        def today(cls):
+            return date(2026, 6, 5)
+
+    class FakeAkshareProvider:
+        def fetch_daily_all(self, trade_date=None):
+            raise RuntimeError("Eastmoney 行情请求失败")
+
+    class FakeBaostockProvider:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def list_stocks(self):
+            return [{"code": "600519", "bs_code": "sh.600519", "name": "贵州茅台"}]
+
+        def fetch_history(self, code, start, end, name=None):
+            assert start == end == "2026-06-05"
+            return [
+                {"code": "600519", "name": "贵州茅台", "date": "2026-06-05",
+                 "open": 10, "close": 18.88, "high": 19, "low": 9, "volume": 1000}
+            ]
+
+    fallback_called = []
+    monkeypatch.setattr(data_service, "date", FakeDate)
+    monkeypatch.setattr(data_service, "AkshareProvider", FakeAkshareProvider)
+    monkeypatch.setattr(data_service, "BaostockProvider", FakeBaostockProvider)
+
+    result = DataService(paths.database_path).update_daily(on_fallback=lambda: fallback_called.append(True))
+    df = KlineRepo(paths.database_path).get_klines("600519")
+
+    assert result == {"rows": 1, "date": "2026-06-05", "status": "fallback", "stocks": 1}
+    assert fallback_called == [True]
+    assert list(df["date"]) == ["2026-06-04", "2026-06-05"]
+    assert float(df.iloc[-1]["close"]) == 18.88
+
+
 def test_find_service_iter_scan_yields_first_match_before_scanning_all(monkeypatch):
     calls = []
 
