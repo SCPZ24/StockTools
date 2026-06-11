@@ -12,6 +12,8 @@ from .schema import MAIN_SCHEMA_SQL
 def connect(path: Path | str) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
+    # 并发回退抓取时有多个写进程，让写入等待锁而不是立刻报 "database is locked"。
+    conn.execute("PRAGMA busy_timeout=30000")
     return conn
 
 

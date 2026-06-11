@@ -520,6 +520,36 @@ def test_update_daily_falls_back_to_per_stock_when_akshare_is_blocked(tmp_path: 
     assert float(df.iloc[-1]["close"]) == 18.88
 
 
+def test_run_shard_fetches_writes_and_reports_progress(tmp_path: Path, monkeypatch):
+    paths = init_paths(tmp_path, monkeypatch)
+
+    class FakeBaostockProvider:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def fetch_history(self, code, start, end, name=None):
+            assert start == end == "2026-06-05"
+            return [
+                {"code": code.split(".")[-1], "name": name, "date": "2026-06-05",
+                 "open": 10, "close": 11, "high": 12, "low": 9, "volume": 1000}
+            ]
+
+    monkeypatch.setattr(data_service, "BaostockProvider", FakeBaostockProvider)
+    shard = [
+        {"code": "600519", "bs_code": "sh.600519", "name": "贵州茅台"},
+        {"code": "000001", "bs_code": "sz.000001", "name": "平安银行"},
+    ]
+    ticks = []
+    result = data_service._run_shard(str(paths.database_path), shard, "2026-06-05", "2026-06-05", lambda: ticks.append(1))
+
+    assert result == {"stocks": 2, "rows": 2}
+    assert ticks == [1, 1]
+    assert KlineRepo(paths.database_path).get_latest_date() == "2026-06-05"
+
+
 def test_find_service_iter_scan_yields_first_match_before_scanning_all(monkeypatch):
     calls = []
 

@@ -32,7 +32,7 @@ def handle_init(args: argparse.Namespace) -> int:
 
 def handle_update(args: argparse.Namespace) -> int:
     def notify_fallback() -> None:
-        print("akshare 行情接口失败，回退到逐只抓取当前交易日（约 5000 次请求，请稍候）……")
+        print("akshare 行情接口失败，回退到逐只抓取当前交易日（约 5000 次请求）：")
 
     result = DataService(db_path()).update_daily(on_fallback=notify_fallback)
     if result.get("status") == "latest":
