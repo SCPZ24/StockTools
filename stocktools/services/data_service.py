@@ -13,21 +13,30 @@ from stocktools.data.providers.baostock_provider import BaostockProvider
 from stocktools.data.repos.kline_repo import KlineRepo
 
 
+# 单条 baostock 长连接发的查询越多，服务端节流越狠、socket 越易半死（末段会从
+# ~20 只/s 塌到 <1 只/s，并伴随 logout failed）。每抓 RELOGIN_EVERY 只就重连一次，
+# 把长 session 切成短 session，绕开累积节流。
+RELOGIN_EVERY = 400
+
+
 def _run_shard(db_path: str, shard: list[dict], start: str, end: str, on_each: Callable[[], None] | None) -> dict:
-    """逐只抓取一个分片。每个进程独立 baostock 登录（全局 session 是进程级的）。"""
+    """逐只抓取一个分片。每个进程独立 baostock 登录（全局 session 是进程级的），
+    并按批重连以避免单条连接老化导致的吞吐塌方。"""
     repo = KlineRepo(db_path)
     inserted = 0
     total = 0
-    with BaostockProvider() as provider:
-        for stock in shard:
-            total += 1
-            try:
-                rows = provider.fetch_history(stock["bs_code"], start, end, stock["name"])
-                inserted += repo.bulk_insert(rows)
-            except Exception:
-                pass
-            if on_each is not None:
-                on_each()
+    for batch_start in range(0, len(shard), RELOGIN_EVERY):
+        batch = shard[batch_start : batch_start + RELOGIN_EVERY]
+        with BaostockProvider() as provider:
+            for stock in batch:
+                total += 1
+                try:
+                    rows = provider.fetch_history(stock["bs_code"], start, end, stock["name"])
+                    inserted += repo.bulk_insert(rows)
+                except Exception:
+                    pass
+                if on_each is not None:
+                    on_each()
     return {"stocks": total, "rows": inserted}
 
 
@@ -66,24 +75,38 @@ class DataService:
         end = date.today().isoformat()
         return self._fetch_per_stock(start, end, progress=True)
 
-    def update_daily(self, on_fallback: Callable[[], None] | None = None) -> dict:
-        trade_date = self._latest_possible_trade_date(date.today())
-        trade_date_text = trade_date.isoformat()
+    def update_daily(self, on_fallback: Callable[[str, str], None] | None = None) -> dict:
+        end = self._latest_possible_trade_date(date.today())
+        end_text = end.isoformat()
         latest_date = self.kline_repo.get_latest_date()
-        if latest_date and latest_date >= trade_date_text:
+        if latest_date and latest_date >= end_text:
             return {"rows": 0, "date": latest_date, "status": "latest"}
-        try:
-            rows = AkshareProvider().fetch_daily_all(trade_date)
-        except Exception:
-            rows = []
-        if not rows:
-            # akshare 行情接口失败或被屏蔽：回退到逐只抓取当前交易日。
-            if on_fallback is not None:
-                on_fallback()
-            result = self._fetch_per_stock(trade_date_text, trade_date_text, progress=True)
-            return {"rows": result["rows"], "date": trade_date_text, "status": "fallback", "stocks": result["stocks"]}
-        inserted = self.kline_repo.bulk_insert(rows)
-        return {"rows": inserted, "date": rows[0]["date"], "status": "updated"}
+        # 缺口起点：库里最新日期的次日；空库则退回到只抓 end 当天。
+        start_text = (
+            (date.fromisoformat(latest_date) + timedelta(days=1)).isoformat() if latest_date else end_text
+        )
+        # akshare 取的是 Eastmoney 实时快照，只代表"最新交易日"，无法回补历史日期。
+        # 只有缺口恰好是 end 这一天时才用它（一次请求，最快）。
+        if start_text == end_text:
+            try:
+                rows = AkshareProvider().fetch_daily_all(end)
+            except Exception:
+                rows = []
+            if rows:
+                inserted = self.kline_repo.bulk_insert(rows)
+                return {"rows": inserted, "date": rows[0]["date"], "status": "updated"}
+        # 多日缺口，或 akshare 失败：用 baostock 按区间逐只补齐 [start, end]。
+        if on_fallback is not None:
+            on_fallback(start_text, end_text)
+        result = self._fetch_per_stock(start_text, end_text, progress=True)
+        actual_date = self.kline_repo.get_latest_date() or end_text
+        return {
+            "rows": result["rows"],
+            "date": actual_date,
+            "status": "fallback",
+            "stocks": result["stocks"],
+            "start": start_text,
+        }
 
     def _fetch_per_stock(self, start: str, end: str, progress: bool = False) -> dict:
         db_path = str(self.kline_repo.db_path)

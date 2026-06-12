@@ -7,17 +7,12 @@ from .base import BaseScanner
 from .results import ScanResult
 from .utils import normalize_df
 
-
 DEFAULTS = {
-    "min_days": 40,
-    "max_days": 140,
-    "start_stride": 5,
-    "end_slack": 3,
-    "prior_days": 20,
+    "fixed_window": 25,
     "height_min": 0.05,
     "height_max": 0.22,
-    "min_touches": 5,
-    "touch_tolerance": 0.02,
+    "min_touches": 2,
+    "touch_tolerance": 0.05,
     "decline_min": 0.20,
     "position_min": 0.55,
     "position_max": 1.08,
@@ -65,10 +60,8 @@ class BoxScanner(BaseScanner):
     def detect(self, df: pd.DataFrame, **kwargs) -> ScanResult:
         p = {**DEFAULTS, **kwargs}
         data = normalize_df(df)
-        min_days = int(p["min_days"])
-        prior = int(p["prior_days"])
-        # Need a box window plus prior history to confirm a real decline into it.
-        if len(data) < min_days + prior:
+        fixed_window = int(p["fixed_window"])
+        if len(data) < fixed_window + 1:
             return ScanResult(False, self.name)
 
         closes = data["close"].values
@@ -78,102 +71,117 @@ class BoxScanner(BaseScanner):
         volumes = data["volume"].values
         dates = data["date"].values
         n = len(closes)
-        stride = int(p["start_stride"])
-        best = None
-        best_score = 0.0
 
-        for end_idx in range(n - 1, n - 1 - int(p["end_slack"]), -1):
-            if end_idx < min_days + prior - 1:
-                break
-            # Full-history extremes up to this point locate the box within the
-            # broader range — "低位" must mean low vs. the year, not just local.
-            hist_high = float(np.max(highs[: end_idx + 1]))
-            hist_low = float(np.min(lows[: end_idx + 1]))
-            hist_span = hist_high - hist_low
+        # ── 取最后 fixed_window 根 K 线 ──────────────────────────
+        start_idx = n - fixed_window
+        end_idx = n - 1
 
-            lo_start = max(prior, end_idx - int(p["max_days"]))
-            hi_start = end_idx - min_days + 1
-            for start_idx in range(lo_start, hi_start + 1, stride):
-                box_len = end_idx - start_idx + 1
-                seg_high = highs[start_idx : end_idx + 1]
-                seg_low = lows[start_idx : end_idx + 1]
-                seg_close = closes[start_idx : end_idx + 1]
+        seg_high = highs[start_idx : end_idx + 1]
+        seg_low = lows[start_idx : end_idx + 1]
+        seg_close = closes[start_idx : end_idx + 1]
+        seg_open = opens[start_idx : end_idx + 1]
+        seg_volume = volumes[start_idx : end_idx + 1]
 
-                box_top = _percentile_linear(seg_high, 95)
-                box_bottom = _percentile_linear(seg_low, 5)
-                if box_bottom <= 0 or box_top <= box_bottom:
-                    continue
-                height = (box_top - box_bottom) / box_bottom
-                if not (p["height_min"] <= height <= p["height_max"]):
-                    continue
+        # ── 上下沿：P95 / P5 ──────────────────────────────────────
+        box_top = _percentile_linear(seg_high, 95)
+        box_bottom = _percentile_linear(seg_low, 5)
+        if box_bottom <= 0 or box_top <= box_bottom:
+            return ScanResult(False, self.name)
+        height = (box_top - box_bottom) / box_bottom
+        if not (p["height_min"] <= height <= p["height_max"]):
+            return ScanResult(False, self.name)
 
-                # Box must be horizontal, not a disguised trend inside a wide band.
-                if _drift(seg_close) > p["flat_max"]:
-                    continue
+        # ── 水平性：箱体必须是平的 ────────────────────────────────
+        if _drift(seg_close) > p["flat_max"]:
+            return ScanResult(False, self.name)
 
-                # Box must sit in the lower part of the full visible range.
-                if hist_span > 0:
-                    range_pos = (box_top - hist_low) / hist_span
-                    if range_pos > p["range_pos_max"]:
-                        continue
+        # ── 历史位置：箱子必须在可见范围的下半部 ──────────────────
+        hist_high = float(np.max(highs[: end_idx + 1]))
+        hist_low = float(np.min(lows[: end_idx + 1]))
+        hist_span = hist_high - hist_low
+        if hist_span > 0:
+            range_pos = (box_top - hist_low) / hist_span
+            if range_pos > p["range_pos_max"]:
+                return ScanResult(False, self.name)
+        else:
+            range_pos = 0.0
 
-                tol = p["touch_tolerance"]
-                top_touches = int(np.sum(seg_high >= box_top * (1 - tol)))
-                bot_touches = int(np.sum(seg_low <= box_bottom * (1 + tol)))
-                if top_touches < p["min_touches"] or bot_touches < p["min_touches"]:
-                    continue
+        # ── 触碰计数（5% 容差）────────────────────────────────────
+        tol = p["touch_tolerance"]
+        top_touches = int(np.sum(seg_high >= box_top * (1 - tol)))
+        bot_touches = int(np.sum(seg_low <= box_bottom * (1 + tol)))
+        if top_touches < p["min_touches"] or bot_touches < p["min_touches"]:
+            return ScanResult(False, self.name)
 
-                contained = int(np.sum((seg_close >= box_bottom * (1 - tol)) & (seg_close <= box_top * (1 + tol))))
-                containment = contained / box_len
-                if containment < p["containment_min"]:
-                    continue
+        # ── 包含率：价格要住在箱子里 ──────────────────────────────
+        contained = int(
+            np.sum(
+                (seg_close >= box_bottom * (1 - tol))
+                & (seg_close <= box_top * (1 + tol))
+            )
+        )
+        containment = contained / fixed_window
+        if containment < p["containment_min"]:
+            return ScanResult(False, self.name)
 
-                # A real prior decline into the box (relative to the pre-box peak).
-                prior_peak = float(np.max(highs[:start_idx]))
-                decline = (prior_peak - box_top) / prior_peak if prior_peak > 0 else 0.0
-                if decline < p["decline_min"]:
-                    continue
+        # ── 前期跌幅：窗口之前的所有数据找峰 ──────────────────────
+        if start_idx > 0:
+            prior_peak = float(np.max(highs[:start_idx]))
+        else:
+            prior_peak = box_top
+        decline = (
+            (prior_peak - box_top) / prior_peak if prior_peak > 0 else 0.0
+        )
+        if decline < p["decline_min"]:
+            return ScanResult(False, self.name)
 
-                cur = float(closes[end_idx])
-                pos = (cur - box_bottom) / (box_top - box_bottom)
-                if not (p["position_min"] <= pos <= p["position_max"]):
-                    continue
+        # ── 当前位置 ──────────────────────────────────────────────
+        cur = float(closes[end_idx])
+        pos = (cur - box_bottom) / (box_top - box_bottom)
+        if not (p["position_min"] <= pos <= p["position_max"]):
+            return ScanResult(False, self.name)
 
-                seg_open = opens[start_idx : end_idx + 1]
-                seg_volume = volumes[start_idx : end_idx + 1]
-                yang_mask = seg_close >= seg_open
-                yin_mask = ~yang_mask
-                vr = float(np.mean(seg_volume[yang_mask]) / np.mean(seg_volume[yin_mask])) if yang_mask.any() and yin_mask.any() else 1.0
-                if vr < p["vol_ratio_min"]:
-                    continue
+        # ── 量价：阳量 vs 阴量 ────────────────────────────────────
+        yang_mask = seg_close >= seg_open
+        yin_mask = ~yang_mask
+        vr = (
+            float(np.mean(seg_volume[yang_mask]) / np.mean(seg_volume[yin_mask]))
+            if yang_mask.any() and yin_mask.any()
+            else 1.0
+        )
+        if vr < p["vol_ratio_min"]:
+            return ScanResult(False, self.name)
 
-                score = (
-                    pos * 25
-                    + min(top_touches + bot_touches, 20) * 3
-                    + min(vr, 2.0) * 10
-                    + min(decline, 0.5) * 50
-                    + containment * 25
-                    + (1 - _drift(seg_close) / p["flat_max"]) * 15
-                )
-                if score > best_score:
-                    best_score = score
-                    best = {
-                        "price": round(cur, 2),
-                        "bottom": round(box_bottom, 2),
-                        "top": round(box_top, 2),
-                        "height_pct": round(height * 100, 1),
-                        "position_pct": round(pos * 100, 1),
-                        "days": box_len,
-                        "top_touches": top_touches,
-                        "bottom_touches": bot_touches,
-                        "containment_pct": round(containment * 100, 1),
-                        "vol_ratio": round(vr, 2),
-                        "decline_pct": round(decline * 100, 1),
-                        "range_pos_pct": round(range_pos * 100, 1) if hist_span > 0 else 0.0,
-                        "score": round(score, 1),
-                        "start_date": pd.Timestamp(dates[start_idx]).strftime("%Y-%m-%d"),
-                        "end_date": pd.Timestamp(dates[end_idx]).strftime("%Y-%m-%d"),
-                    }
-            if best:
-                break
-        return ScanResult(bool(best), self.name, best or {})
+        # ── 综合打分 ──────────────────────────────────────────────
+        score = (
+            pos * 25
+            + min(top_touches + bot_touches, 20) * 3
+            + min(vr, 2.0) * 10
+            + min(decline, 0.5) * 50
+            + containment * 25
+            + (1 - _drift(seg_close) / p["flat_max"]) * 15
+        )
+
+        return ScanResult(
+            True,
+            self.name,
+            {
+                "price": round(cur, 2),
+                "bottom": round(box_bottom, 2),
+                "top": round(box_top, 2),
+                "height_pct": round(height * 100, 1),
+                "position_pct": round(pos * 100, 1),
+                "days": fixed_window,
+                "top_touches": top_touches,
+                "bottom_touches": bot_touches,
+                "containment_pct": round(containment * 100, 1),
+                "vol_ratio": round(vr, 2),
+                "decline_pct": round(decline * 100, 1),
+                "range_pos_pct": round(range_pos * 100, 1)
+                if hist_span > 0
+                else 0.0,
+                "score": round(score, 1),
+                "start_date": pd.Timestamp(dates[start_idx]).strftime("%Y-%m-%d"),
+                "end_date": pd.Timestamp(dates[end_idx]).strftime("%Y-%m-%d"),
+            },
+        )

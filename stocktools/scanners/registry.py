@@ -4,6 +4,7 @@ from .base import BaseScanner
 from .box import BoxScanner
 from .channel import ChannelScanner
 from .independent import IndependentScanner
+from .ma_alignment import MAAlignmentScanner
 from .volume_absorb import VolumeAbsorbScanner
 
 
@@ -12,6 +13,7 @@ SCANNER_CLASSES: dict[str, type[BaseScanner]] = {
     "channel": ChannelScanner,
     "volume_absorb": VolumeAbsorbScanner,
     "independent": IndependentScanner,
+    "ma_alignment": MAAlignmentScanner,
 }
 
 
