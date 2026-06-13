@@ -17,6 +17,86 @@ ROOT = Path(__file__).resolve().parents[1]
 ST = ROOT / "st.py"
 
 
+def test_cli_tui_entrypoint_does_not_import_pandas_or_numpy_before_launch():
+    script = r"""
+import importlib.abc
+
+
+class BlockScientificStack(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "pandas" or fullname.startswith("pandas."):
+            raise RuntimeError(f"unexpected import before TUI launch: {fullname}")
+        if fullname == "numpy" or fullname.startswith("numpy."):
+            raise RuntimeError(f"unexpected import before TUI launch: {fullname}")
+        return None
+
+
+import sys
+
+sys.meta_path.insert(0, BlockScientificStack())
+
+import stocktools.cli.main as cli_main
+
+cli_main._launch_tui = lambda: 17
+assert cli_main.main([]) == 17
+assert cli_main.main(["tui"]) == 17
+print("ok")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ok"
+
+
+def test_tui_app_can_render_without_importing_pandas_or_numpy(tmp_path: Path):
+    script = r"""
+import asyncio
+import importlib.abc
+
+
+class BlockScientificStack(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "pandas" or fullname.startswith("pandas."):
+            raise RuntimeError(f"unexpected import during TUI startup: {fullname}")
+        if fullname == "numpy" or fullname.startswith("numpy."):
+            raise RuntimeError(f"unexpected import during TUI startup: {fullname}")
+        return None
+
+
+import sys
+
+sys.meta_path.insert(0, BlockScientificStack())
+
+from stocktools.tui.app import StockToolsApp
+
+async def main():
+    app = StockToolsApp()
+    async with app.run_test(size=(120, 32)):
+        pass
+
+
+asyncio.run(main())
+print("ok")
+"""
+    env = os.environ.copy()
+    env["STOCKTOOLS_HOME"] = str(tmp_path / "work")
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ok"
+
+
 def run_cli(args: list[str], home: Path) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["STOCKTOOLS_HOME"] = str(home)

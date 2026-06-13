@@ -62,7 +62,8 @@ Screen {
 }
 
 #right-panel {
-    width: 3fr;
+    width: 100%;
+    height: 1fr;
     padding: 1 2;
     background: transparent;
 }
@@ -95,8 +96,34 @@ DataTable > .datatable--hover {
 
 /* ── Detail panel ─────────────────────────────────────── */
 
-DetailPanel {
+StockInspector {
+    layout: horizontal;
+    width: 3fr;
     background: transparent;
+}
+
+DetailPanel {
+    width: 1fr;
+    min-width: 42;
+    background: transparent;
+}
+
+StockInspector.chart-visible DetailPanel {
+    width: 42;
+    max-width: 52;
+}
+
+StockInspector.chart-hidden DetailPanel {
+    width: 1fr;
+}
+
+KlineChart {
+    width: 1fr;
+    min-width: 56;
+    height: 1fr;
+    padding: 1 1;
+    background: transparent;
+    color: $text;
 }
 
 VerticalScroll {

@@ -4,8 +4,6 @@ from pathlib import Path
 import sqlite3
 from typing import Callable, TypeVar
 
-import pandas as pd
-
 from stocktools.data.db import connect, connect_readonly
 
 T = TypeVar("T")
@@ -19,7 +17,7 @@ class KlineRepo:
         conn = connect(self.db_path)
         try:
             result = operation(conn)
-        except (sqlite3.OperationalError, pd.errors.DatabaseError) as exc:
+        except sqlite3.OperationalError as exc:
             conn.close()
             if "unable to open database file" not in str(exc):
                 raise
@@ -32,6 +30,18 @@ class KlineRepo:
             return result
         finally:
             conn.close()
+
+    def get_kline_rows(self, code: str, n_days: int | None = None) -> list[dict]:
+        limit = "" if n_days is None else f"LIMIT {int(n_days)}"
+        query = f"""
+            SELECT code, name, date, open, close, high, low, volume
+            FROM daily_kline
+            WHERE code = ?
+            ORDER BY date DESC
+            {limit}
+        """
+        rows = self._read(lambda conn: conn.execute(query, (code,)).fetchall())
+        return [dict(row) for row in reversed(rows)]
 
     def bulk_insert(self, rows: list[dict]) -> int:
         if not rows:
@@ -66,19 +76,11 @@ class KlineRepo:
             )
         return len(values)
 
-    def get_klines(self, code: str, n_days: int | None = None) -> pd.DataFrame:
-        limit = "" if n_days is None else f"LIMIT {int(n_days)}"
-        query = f"""
-            SELECT code, name, date, open, close, high, low, volume
-            FROM daily_kline
-            WHERE code = ?
-            ORDER BY date DESC
-            {limit}
-        """
-        df = self._read(lambda conn: pd.read_sql_query(query, conn, params=(code,)))
-        if df.empty:
-            return df
-        return df.sort_values("date").reset_index(drop=True)
+    def get_klines(self, code: str, n_days: int | None = None):
+        import pandas as pd
+
+        columns = ["code", "name", "date", "open", "close", "high", "low", "volume"]
+        return pd.DataFrame(self.get_kline_rows(code, n_days), columns=columns)
 
     # Tradable A-share equity code prefixes (excludes indices like 399xxx).
     STOCK_PREFIXES = ("000", "001", "002", "003", "300", "301", "302", "600", "601", "603", "605", "688", "689")

@@ -11,6 +11,7 @@ from textual.widgets import DataTable, Static
 from stocktools.scanners.registry import scanner_names
 from stocktools.tui.stock_style import stock_name_cell
 from stocktools.tui.widgets.detail_panel import DetailPanel
+from stocktools.tui.widgets.stock_inspector import StockInspector
 from stocktools.tui.widgets.stock_table import StockDataTable
 
 
@@ -46,7 +47,7 @@ class ScanTab(Widget):
             with Vertical(id="left-panel"):
                 yield Static("", id="scanner-selector")
                 yield _ScanResultsTable(id="scan-results")
-            yield DetailPanel()
+            yield StockInspector()
         yield Static(
             "[bright_blue]空格[/]执行扫描  [bright_blue]←→[/]切换扫描器  "
             "[bright_blue]Enter[/]加入关注池  [bright_blue]c[/]导出CSV",
@@ -78,7 +79,9 @@ class ScanTab(Widget):
         self._render_scanner_bar()
 
     def run_scan(self) -> None:
-        self.query_one(DetailPanel).set_loading("扫描中...")
+        inspector = self.query_one(StockInspector)
+        inspector.clear_all()
+        inspector.query_one(DetailPanel).set_loading("扫描中...")
         table = self.query_one("#scan-results", DataTable)
         table.clear()
         self._results = []
@@ -118,7 +121,7 @@ class ScanTab(Widget):
         if self._results:
             self.app.notify(f"扫描完成，共 {len(self._results)} 条")
         else:
-            detail.clear()
+            self.query_one(StockInspector).clear_all()
             detail.set_loading("未发现匹配股票")
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
@@ -129,6 +132,7 @@ class ScanTab(Widget):
         item = self._results[idx]
         in_watchlist = self.app._record_svc.show(item["code"]) is not None
         self.query_one(DetailPanel).render_scan_detail(item, in_watchlist)
+        self.query_one(StockInspector).show_chart_for(item["code"], item.get("name", ""))
 
     def selected_item(self) -> dict | None:
         table = self.query_one("#scan-results", DataTable)

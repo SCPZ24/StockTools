@@ -198,6 +198,61 @@ def test_tui_theme_uses_fully_transparent_background_layers():
     assert _ST_THEME.ansi is True
 
 
+def test_tui_docs_describe_transparent_kline_chart_with_volume_without_mas():
+    doc = Path("docs/TUI.md").read_text(encoding="utf-8")
+
+    assert "不渲染 K 线图" not in doc
+    assert "透明底色" in doc
+    assert "成交量" in doc
+    assert "不叠加均线" in doc
+    assert "MA5" not in doc
+    assert "MA20" not in doc
+    assert "MA60" not in doc
+
+
+def test_kline_chart_render_includes_price_and_volume_without_ma_layers():
+    from rich.style import Style
+    from stocktools.tui.widgets.kline_chart import build_kline_chart_text
+
+    df = pd.DataFrame(make_rows("600519", "贵州茅台", 180))
+
+    chart = build_kline_chart_text("600519", "贵州茅台", df, 80, 24)
+    plain = chart.plain
+
+    assert "600519" in plain
+    assert "贵州茅台" in plain
+    assert "MA5" not in plain
+    assert "MA20" not in plain
+    assert "MA60" not in plain
+    assert "成交量" in plain
+    assert "2025-" in plain
+    assert "\x1b" not in plain
+    for span in chart.spans:
+        style = Style.parse(span.style) if isinstance(span.style, str) else span.style
+        assert style.bgcolor is None
+
+
+def test_kline_chart_uses_available_width_for_more_than_120_candles():
+    from stocktools.tui.widgets.kline_chart import _prepare_visible_klines
+
+    df = pd.DataFrame(make_rows("600519", "贵州茅台", 220))
+
+    visible = _prepare_visible_klines(df, 180)
+
+    assert len(visible) > 120
+    assert len(visible) == 171
+
+
+def test_kline_chart_render_handles_empty_and_tiny_sizes():
+    from stocktools.tui.widgets.kline_chart import build_kline_chart_text
+
+    empty = build_kline_chart_text("600519", "贵州茅台", pd.DataFrame(), 80, 24)
+    tiny = build_kline_chart_text("600519", "贵州茅台", pd.DataFrame(make_rows(days=30)), 40, 12)
+
+    assert "暂无 K 线数据" in empty.plain
+    assert "尺寸不足" in tiny.plain
+
+
 def test_connect_readonly_opens_database_as_immutable_uri(tmp_path: Path, monkeypatch):
     db_path = tmp_path / "database.db"
     seen = {}
@@ -597,6 +652,40 @@ def test_tui_scan_tab_append_scan_result_updates_results_and_table(tmp_path: Pat
             table = tab.query_one("#scan-results", DataTable)
             assert tab._results == [item]
             assert table.row_count == 1
+
+    asyncio.run(run_check())
+
+
+def test_tui_kline_chart_visibility_tracks_terminal_width(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("STOCKTOOLS_HOME", str(tmp_path / "work"))
+
+    async def run_check():
+        from stocktools.tui.widgets.kline_chart import KlineChart
+
+        wide_app = StockToolsApp()
+        async with wide_app.run_test(size=(170, 32)):
+            assert wide_app.query_one(WatchlistTab).query_one(KlineChart).display is True
+
+        narrow_app = StockToolsApp()
+        async with narrow_app.run_test(size=(120, 32)):
+            assert narrow_app.query_one(WatchlistTab).query_one(KlineChart).display is False
+
+    asyncio.run(run_check())
+
+
+def test_tui_kline_chart_tracks_selected_watchlist_stock(tmp_path: Path, monkeypatch):
+    paths = init_paths(tmp_path, monkeypatch)
+    KlineRepo(paths.database_path).bulk_insert(make_rows("600519", "贵州茅台", 180))
+    RecordService(paths.database_path).add("600519")
+
+    async def run_check():
+        from stocktools.tui.widgets.kline_chart import KlineChart
+
+        app = StockToolsApp()
+        async with app.run_test(size=(170, 32)) as pilot:
+            await pilot.pause()
+            chart = app.query_one(WatchlistTab).query_one(KlineChart)
+            assert chart.selected_code == "600519"
 
     asyncio.run(run_check())
 

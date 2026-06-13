@@ -7,6 +7,7 @@ from textual.widget import Widget
 from textual.widgets import DataTable, Static
 
 from stocktools.tui.widgets.detail_panel import DetailPanel
+from stocktools.tui.widgets.stock_inspector import StockInspector
 from stocktools.tui.widgets.stock_table import StockDataTable
 
 
@@ -53,7 +54,7 @@ class HoldingsTab(Widget):
     def compose(self) -> ComposeResult:
         with Horizontal(id="content"):
             yield StockDataTable(id="left-panel")
-            yield DetailPanel()
+            yield StockInspector()
         yield Static(
             "[bright_blue]s[/]止损价  [bright_blue]t[/]目标价  [bright_blue]n[/]备注  "
             "[bright_blue]x[/]平仓  [bright_blue]r[/]减仓  "
@@ -77,7 +78,7 @@ class HoldingsTab(Widget):
             table.move_cursor(row=0)
             self._show_detail(0)
         else:
-            self.query_one(DetailPanel).clear()
+            self.query_one(StockInspector).clear_all()
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.cursor_row is not None and event.cursor_row < len(self._items):
@@ -87,6 +88,7 @@ class HoldingsTab(Widget):
         item = self._items[idx]
         ai_log = self.app._ai_logs_repo.get_latest(item["code"], "alert")
         self.query_one(DetailPanel).render_holding_detail(item, ai_log)
+        self.query_one(StockInspector).show_chart_for(item["code"], item["name"])
 
     def selected_item(self) -> dict | None:
         table = self.query_one(DataTable)

@@ -1,29 +1,29 @@
 from __future__ import annotations
 
-from .base import BaseScanner
-from .box import BoxScanner
-from .channel import ChannelScanner
-from .independent import IndependentScanner
-from .ma_alignment import MAAlignmentScanner
-from .volume_absorb import VolumeAbsorbScanner
+from importlib import import_module
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .base import BaseScanner
 
 
-SCANNER_CLASSES: dict[str, type[BaseScanner]] = {
-    "box": BoxScanner,
-    "channel": ChannelScanner,
-    "volume_absorb": VolumeAbsorbScanner,
-    "independent": IndependentScanner,
-    "ma_alignment": MAAlignmentScanner,
+SCANNER_CLASSES: dict[str, tuple[str, str]] = {
+    "box": ("stocktools.scanners.box", "BoxScanner"),
+    "channel": ("stocktools.scanners.channel", "ChannelScanner"),
+    "volume_absorb": ("stocktools.scanners.volume_absorb", "VolumeAbsorbScanner"),
+    "independent": ("stocktools.scanners.independent", "IndependentScanner"),
+    "ma_alignment": ("stocktools.scanners.ma_alignment", "MAAlignmentScanner"),
 }
 
 
-def get_scanner(name: str) -> BaseScanner:
+def get_scanner(name: str) -> "BaseScanner":
     try:
-        return SCANNER_CLASSES[name]()
+        module_name, class_name = SCANNER_CLASSES[name]
     except KeyError as exc:
         raise ValueError(f"未知扫描器: {name}") from exc
+    scanner_cls = getattr(import_module(module_name), class_name)
+    return scanner_cls()
 
 
 def scanner_names() -> list[str]:
     return list(SCANNER_CLASSES)
-

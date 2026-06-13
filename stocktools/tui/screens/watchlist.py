@@ -6,6 +6,7 @@ from textual.widget import Widget
 from textual.widgets import DataTable, Static
 
 from stocktools.tui.widgets.detail_panel import DetailPanel
+from stocktools.tui.widgets.stock_inspector import StockInspector
 from stocktools.tui.widgets.stock_table import StockDataTable
 
 
@@ -20,7 +21,7 @@ class WatchlistTab(Widget):
     def compose(self) -> ComposeResult:
         with Horizontal(id="content"):
             yield StockDataTable(id="left-panel")
-            yield DetailPanel()
+            yield StockInspector()
         yield Static(
             "[bright_blue]a[/]添加  [bright_blue]d[/]移除  [bright_blue]g[/]明天买  "
             "[bright_blue]n[/]备注  [bright_blue]w[/]买入分析  [bright_blue]Enter[/]转入持仓",
@@ -44,7 +45,7 @@ class WatchlistTab(Widget):
             table.move_cursor(row=0)
             self._show_detail(0)
         else:
-            self.query_one(DetailPanel).clear()
+            self.query_one(StockInspector).clear_all()
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.cursor_row is not None and event.cursor_row < len(self._items):
@@ -54,6 +55,7 @@ class WatchlistTab(Widget):
         item = self._items[idx]
         ai_logs = self.app._ai_logs_repo.get_recent(item["code"], "watch", 3)
         self.query_one(DetailPanel).render_watchlist_detail(item, ai_logs)
+        self.query_one(StockInspector).show_chart_for(item["code"], item["name"])
 
     def selected_item(self) -> dict | None:
         table = self.query_one(DataTable)
