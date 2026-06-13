@@ -184,7 +184,7 @@ def test_stock_name_cell_uses_a_share_price_colors():
     assert stock_name_cell(FakeRepo(None), "600519", "贵州茅台").style == "white"
 
 
-def test_tui_theme_uses_fully_transparent_background_layers():
+def test_tui_theme_uses_fully_transparent_background_layers(tmp_path: Path, monkeypatch):
     assert _ST_THEME.background == "transparent"
     assert _ST_THEME.surface == "transparent"
     assert _ST_THEME.panel == "transparent"
@@ -195,7 +195,11 @@ def test_tui_theme_uses_fully_transparent_background_layers():
     assert _ST_THEME.variables["screen-selection-background"] == "transparent"
     assert _ST_THEME.variables["border"] == "white"
     assert _ST_THEME.variables["border-blurred"] == "white"
-    assert _ST_THEME.ansi is True
+    assert _ST_THEME.ansi is False
+
+    init_paths(tmp_path, monkeypatch)
+    app = StockToolsApp()
+    assert app.ansi_color is True
 
 
 def test_tui_docs_describe_transparent_kline_chart_with_volume_without_mas():
@@ -566,11 +570,13 @@ def test_update_daily_falls_back_to_per_stock_when_akshare_is_blocked(tmp_path: 
     monkeypatch.setattr(data_service, "AkshareProvider", FakeAkshareProvider)
     monkeypatch.setattr(data_service, "BaostockProvider", FakeBaostockProvider)
 
-    result = DataService(paths.database_path).update_daily(on_fallback=lambda: fallback_called.append(True))
+    result = DataService(paths.database_path).update_daily(
+        on_fallback=lambda start, end: fallback_called.append((start, end))
+    )
     df = KlineRepo(paths.database_path).get_klines("600519")
 
-    assert result == {"rows": 1, "date": "2026-06-05", "status": "fallback", "stocks": 1}
-    assert fallback_called == [True]
+    assert result == {"rows": 1, "date": "2026-06-05", "status": "fallback", "stocks": 1, "start": "2026-06-05"}
+    assert fallback_called == [("2026-06-05", "2026-06-05")]
     assert list(df["date"]) == ["2026-06-04", "2026-06-05"]
     assert float(df.iloc[-1]["close"]) == 18.88
 

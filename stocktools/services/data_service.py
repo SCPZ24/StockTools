@@ -12,6 +12,8 @@ from stocktools.data.providers.akshare_provider import AkshareProvider
 from stocktools.data.providers.baostock_provider import BaostockProvider
 from stocktools.data.repos.kline_repo import KlineRepo
 
+_DATE_CLASS = date
+
 
 # 单条 baostock 长连接发的查询越多，服务端节流越狠、socket 越易半死（末段会从
 # ~20 只/s 塌到 <1 只/s，并伴随 logout failed）。每抓 RELOGIN_EVERY 只就重连一次，
@@ -83,7 +85,7 @@ class DataService:
             return {"rows": 0, "date": latest_date, "status": "latest"}
         # 缺口起点：库里最新日期的次日；空库则退回到只抓 end 当天。
         start_text = (
-            (date.fromisoformat(latest_date) + timedelta(days=1)).isoformat() if latest_date else end_text
+            (_DATE_CLASS.fromisoformat(latest_date) + timedelta(days=1)).isoformat() if latest_date else end_text
         )
         # akshare 取的是 Eastmoney 实时快照，只代表"最新交易日"，无法回补历史日期。
         # 只有缺口恰好是 end 这一天时才用它（一次请求，最快）。
