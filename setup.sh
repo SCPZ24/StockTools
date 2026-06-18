@@ -5,6 +5,35 @@ INSTALL_DIR="$(pwd)"
 DEFAULT_WORKDIR="$HOME/.stock_tools"
 PATH_FILE="$HOME/.stock_tools_path"
 
+# 选择带项目依赖(pandas)的 python3 绝对路径。
+# cron 运行时 PATH 仅含 /usr/bin:/bin，裸 python3 会命中系统自带解释器
+# （缺少 pandas），导致自动更新任务每天失败，因此必须解析出绝对路径。
+pick_python() {
+  local seen="" abs c
+  for c in "$(command -v python3 2>/dev/null)" \
+           /opt/homebrew/bin/python3 \
+           /usr/local/bin/python3 \
+           /Library/Frameworks/Python.framework/Versions/Current/bin/python3; do
+    [ -x "$c" ] || continue
+    abs="$(cd "$(dirname "$c")" && pwd)/$(basename "$c")"
+    case " $seen " in *" $abs "*) continue ;; esac
+    seen="$seen $abs"
+    if "$abs" -c 'import pandas' >/dev/null 2>&1; then
+      printf '%s\n' "$abs"
+      return 0
+    fi
+  done
+  return 1
+}
+
+PYTHON_BIN="$(pick_python || true)"
+if [ -z "$PYTHON_BIN" ]; then
+  echo "错误：未找到包含依赖(pandas)的 python3。" >&2
+  echo "请先安装依赖：python3 -m pip install -r \"$INSTALL_DIR/requirements.txt\"" >&2
+  exit 1
+fi
+echo "使用 Python: $PYTHON_BIN"
+
 echo "StockTools setup"
 read -r -p "工作目录 [$DEFAULT_WORKDIR]: " WORKDIR
 WORKDIR="${WORKDIR:-$DEFAULT_WORKDIR}"
@@ -36,7 +65,7 @@ else
 fi
 
 export STOCKTOOLS_HOME="$WORKDIR"
-python3 - <<'PY'
+"$PYTHON_BIN" - <<'PY'
 from stocktools.infra.paths import Paths
 
 paths = Paths.resolve()
@@ -56,13 +85,13 @@ else
   {
     echo ""
     echo "# StockTools begin"
-    echo "function st() { python3 \"$INSTALL_DIR/st.py\" \"\$@\"; }"
+    echo "function st() { \"$PYTHON_BIN\" \"$INSTALL_DIR/st.py\" \"\$@\"; }"
     echo "# StockTools end"
   } >> "$RC_FILE"
   echo "已写入 st 命令到: $RC_FILE"
 fi
 
-HAS_MODEL_CONFIG="$(python3 - <<'PY'
+HAS_MODEL_CONFIG="$("$PYTHON_BIN" - <<'PY'
 from stocktools.config.model_config_repo import ModelConfigRepo
 from stocktools.infra.paths import Paths
 
@@ -83,7 +112,7 @@ if [ "$WRITE_MODEL" = "y" ] || [ "$WRITE_MODEL" = "Y" ]; then
   read -r -p "api_key: " MODEL_API_KEY
   read -r -p "model_name [deepseek-chat]: " MODEL_NAME
   MODEL_NAME="${MODEL_NAME:-deepseek-chat}"
-  MODEL_BASE_URL="$MODEL_BASE_URL" MODEL_API_KEY="$MODEL_API_KEY" MODEL_NAME="$MODEL_NAME" python3 - <<'PY'
+  MODEL_BASE_URL="$MODEL_BASE_URL" MODEL_API_KEY="$MODEL_API_KEY" MODEL_NAME="$MODEL_NAME" "$PYTHON_BIN" - <<'PY'
 import os
 from stocktools.config.model_config_repo import ModelConfigRepo
 from stocktools.infra.paths import Paths
@@ -115,7 +144,7 @@ if [ "$SET_CRON" = "y" ] || [ "$SET_CRON" = "Y" ]; then
     read -r -p "分钟 [05]: " CRON_MINUTE
     CRON_HOUR="${CRON_HOUR:-15}"
     CRON_MINUTE="${CRON_MINUTE:-05}"
-    python3 "$INSTALL_DIR/st.py" cron set "$CRON_HOUR" "$CRON_MINUTE"
+    "$PYTHON_BIN" "$INSTALL_DIR/st.py" cron set "$CRON_HOUR" "$CRON_MINUTE"
   else
     echo "跳过 cron 替换。"
   fi

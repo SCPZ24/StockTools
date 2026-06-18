@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from stocktools.cli.common import db_path
@@ -47,9 +48,12 @@ def handle_update(args: argparse.Namespace) -> int:
 
 
 def handle_cron_set(args: argparse.Namespace) -> int:
-    st_path = Path.cwd() / "st.py"
+    st_path = Path(__file__).resolve().parents[2] / "st.py"
     workdir = Paths.resolve().workdir
-    command = f'STOCKTOOLS_HOME="{workdir}" python3 "{st_path}" update'
+    # 使用绝对解释器路径：cron 的 PATH 仅含 /usr/bin:/bin，裸 python3 会命中
+    # 系统自带的解释器（缺少 pandas 等依赖），导致任务每天失败。
+    python_bin = sys.executable or "python3"
+    command = f'STOCKTOOLS_HOME="{workdir}" "{python_bin}" "{st_path}" update'
     CronService().set(args.hh, args.mm, command)
     print(f"已设置每日 {args.hh:02d}:{args.mm:02d} 自动更新。")
     return 0
