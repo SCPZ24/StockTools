@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import queue
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Callable
 
@@ -11,6 +11,7 @@ from tqdm import tqdm
 from stocktools.data.providers.akshare_provider import AkshareProvider
 from stocktools.data.providers.baostock_provider import BaostockProvider
 from stocktools.data.repos.kline_repo import KlineRepo
+from stocktools.services.concept_service import ConceptService
 
 _DATE_CLASS = date
 
@@ -69,20 +70,28 @@ def _drain(q) -> int:
 class DataService:
     WORKERS = 4
 
-    def __init__(self, db_path: Path | str):
+    def __init__(self, db_path: Path | str, enable_concepts: bool = True, concept_service: ConceptService | None = None):
+        self.db_path = db_path
         self.kline_repo = KlineRepo(db_path)
+        self.concept_service = concept_service if concept_service is not None else (ConceptService(db_path) if enable_concepts else None)
 
     def init_history(self) -> dict:
         start = (date.today() - timedelta(days=365)).isoformat()
         end = date.today().isoformat()
-        return self._fetch_per_stock(start, end, progress=True)
+        result = self._fetch_per_stock(start, end, progress=True)
+        self._attach_concept(result, self._init_concepts(start, end))
+        return result
 
-    def update_daily(self, on_fallback: Callable[[str, str], None] | None = None) -> dict:
+    def update_daily(self, on_fallback: Callable[[str, str], None] | None = None, force: bool = False) -> dict:
+        if not force and self._is_intraday_blocked():
+            return {"rows": 0, "date": date.today().isoformat(), "status": "blocked_intraday"}
         end = self._latest_possible_trade_date(date.today())
         end_text = end.isoformat()
         latest_date = self.kline_repo.get_latest_date()
         if latest_date and latest_date >= end_text:
-            return {"rows": 0, "date": latest_date, "status": "latest"}
+            result = {"rows": 0, "date": latest_date, "status": "latest"}
+            self._attach_concept(result, self._update_concepts(end_text))
+            return result
         # 缺口起点：库里最新日期的次日；空库则退回到只抓 end 当天。
         start_text = (
             (_DATE_CLASS.fromisoformat(latest_date) + timedelta(days=1)).isoformat() if latest_date else end_text
@@ -96,19 +105,23 @@ class DataService:
                 rows = []
             if rows:
                 inserted = self.kline_repo.bulk_insert(rows)
-                return {"rows": inserted, "date": rows[0]["date"], "status": "updated"}
+                result = {"rows": inserted, "date": rows[0]["date"], "status": "updated"}
+                self._attach_concept(result, self._update_concepts(end_text))
+                return result
         # 多日缺口，或 akshare 失败：用 baostock 按区间逐只补齐 [start, end]。
         if on_fallback is not None:
             on_fallback(start_text, end_text)
         result = self._fetch_per_stock(start_text, end_text, progress=True)
         actual_date = self.kline_repo.get_latest_date() or end_text
-        return {
+        result = {
             "rows": result["rows"],
             "date": actual_date,
             "status": "fallback",
             "stocks": result["stocks"],
             "start": start_text,
         }
+        self._attach_concept(result, self._update_concepts(end_text))
+        return result
 
     def _fetch_per_stock(self, start: str, end: str, progress: bool = False) -> dict:
         db_path = str(self.kline_repo.db_path)
@@ -147,6 +160,36 @@ class DataService:
         total = sum(r["stocks"] for r in results)
         inserted = sum(r["rows"] for r in results)
         return {"stocks": total, "rows": inserted}
+
+    def _init_concepts(self, start: str, end: str) -> dict:
+        if self.concept_service is None:
+            return {"status": "skipped"}
+        try:
+            return self.concept_service.init_history(start, end)
+        except Exception as exc:
+            return {"status": "error", "error": str(exc)}
+
+    def _update_concepts(self, end: str) -> dict:
+        if self.concept_service is None:
+            return {"status": "skipped"}
+        try:
+            return self.concept_service.update_daily(end)
+        except Exception as exc:
+            return {"status": "error", "error": str(exc)}
+
+    @staticmethod
+    def _attach_concept(result: dict, concept: dict) -> None:
+        if concept.get("status") != "skipped":
+            result["concept"] = concept
+
+    @staticmethod
+    def _is_intraday_blocked() -> bool:
+        today = date.today()
+        now = datetime.now()
+        if today != now.date() or today.weekday() >= 5:
+            return False
+        current = now.time()
+        return time(9, 30) <= current <= time(11, 30) or time(13, 0) <= current <= time(15, 0)
 
     @staticmethod
     def _latest_possible_trade_date(today: date) -> date:

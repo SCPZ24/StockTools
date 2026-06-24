@@ -16,6 +16,7 @@ import stocktools.ai.client as ai_client
 import stocktools.data.db as data_db
 import stocktools.data.providers.akshare_provider as akshare_provider
 import stocktools.data.providers.baostock_provider as baostock_provider
+import stocktools.data.providers.eastmoney_session as eastmoney_session
 import stocktools.services.data_service as data_service
 import stocktools.services.find_service as find_service_module
 from stocktools.ai.alert_analyst import AlertAnalyst
@@ -90,7 +91,7 @@ def test_schema_and_repos_are_idempotent(tmp_path: Path, monkeypatch):
 
     conn = sqlite3.connect(paths.database_path)
     tables = {row[0] for row in conn.execute("select name from sqlite_master where type='table'")}
-    assert {"daily_kline", "watchlist", "holdings", "ai_logs"}.issubset(tables)
+    assert {"daily_kline", "watchlist", "holdings", "ai_logs", "concept_index", "concept_kline", "daily_hotspot"}.issubset(tables)
 
     config_conn = sqlite3.connect(paths.config_path)
     config_tables = {row[0] for row in config_conn.execute("select name from sqlite_master where type='table'")}
@@ -124,6 +125,7 @@ def test_schema_and_repos_are_idempotent(tmp_path: Path, monkeypatch):
     logs.upsert("600519", "watch", "wait", "old", "2026-01-01")
     logs.upsert("600519", "watch", "buy", "new", "2026-01-01")
     assert logs.get_latest("600519", "watch")["content"] == "new"
+    assert [row["content"] for row in logs.get_recent("600519", "watch", 2)] == ["new", "old"]
 
     config = ModelConfigRepo(paths.config_path)
     config.upsert("https://api.example.com", "secret", "deepseek-chat")
@@ -352,7 +354,7 @@ def test_baostock_list_stocks_falls_back_from_empty_non_trading_day(monkeypatch)
     assert queried_days == ["2026-06-06", "2026-06-05"]
 
 
-def test_akshare_provider_falls_back_to_direct_request_after_env_proxy_failure(monkeypatch):
+def test_akshare_provider_uses_direct_eastmoney_request(monkeypatch):
     sessions = []
     requested = []
 
@@ -378,19 +380,16 @@ def test_akshare_provider_falls_back_to_direct_request_after_env_proxy_failure(m
 
         def get(self, url, params, timeout, headers=None):
             requested.append((url, dict(params), timeout, self.trust_env))
-            if self.trust_env:
-                raise akshare_provider.requests.exceptions.ProxyError("bad proxy")
             return FakeResponse()
 
-    monkeypatch.setattr(akshare_provider.requests, "Session", FakeSession)
+    monkeypatch.setattr(eastmoney_session.requests, "Session", FakeSession)
 
     rows = akshare_provider.AkshareProvider().fetch_daily_all(date(2026, 6, 9))
 
-    assert [session.trust_env for session in sessions] == [True, False]
-    assert requested[0][3] is True
-    assert requested[1][3] is False
-    assert requested[1][0] == "https://82.push2.eastmoney.com/api/qt/clist/get"
-    assert requested[1][1]["fs"] == "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048"
+    assert [session.trust_env for session in sessions] == [False]
+    assert requested[0][3] is False
+    assert requested[0][0] == "https://82.push2.eastmoney.com/api/qt/clist/get"
+    assert requested[0][1]["fs"] == "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048"
     assert rows == [
         {"code": "600519", "name": "贵州茅台", "date": "2026-06-09", "open": 10.0, "close": 11.0, "high": 12.0, "low": 9.0, "volume": 1000.0},
         {"code": "000001", "name": "平安银行", "date": "2026-06-09", "open": 20.0, "close": 21.0, "high": 22.0, "low": 19.0, "volume": 2000.0},
@@ -425,7 +424,7 @@ def test_akshare_provider_fetches_all_eastmoney_pages(monkeypatch):
             requested_pages.append(params["pn"])
             return FakeResponse(params["pn"])
 
-    monkeypatch.setattr(akshare_provider.requests, "Session", FakeSession)
+    monkeypatch.setattr(eastmoney_session.requests, "Session", FakeSession)
 
     rows = akshare_provider.AkshareProvider().fetch_daily_all(date(2026, 6, 9))
 
@@ -454,16 +453,15 @@ def test_akshare_provider_falls_back_to_next_eastmoney_host(monkeypatch):
         def get(self, url, params, timeout, headers=None):
             requested_urls.append((url, headers))
             if len(requested_urls) <= 2:
-                raise akshare_provider.requests.exceptions.ConnectionError("first host closed")
+                raise eastmoney_session.requests.exceptions.ConnectionError("first host closed")
             return FakeResponse()
 
-    monkeypatch.setattr(akshare_provider.requests, "Session", FakeSession)
+    monkeypatch.setattr(eastmoney_session.requests, "Session", FakeSession)
 
     rows = akshare_provider.AkshareProvider().fetch_daily_all(date(2026, 6, 9))
 
-    assert requested_urls[0][0] == requested_urls[1][0]
-    assert requested_urls[1][0] != requested_urls[2][0]
-    assert requested_urls[2][1]["Referer"] == "https://quote.eastmoney.com/center/gridlist.html"
+    assert requested_urls[0][0] != requested_urls[1][0]
+    assert requested_urls[1][1]["Referer"] == "https://quote.eastmoney.com/center/gridlist.html"
     assert rows[0]["code"] == "600519"
 
 
@@ -497,7 +495,7 @@ def test_update_daily_skips_when_weekend_snapshot_is_already_current(tmp_path: P
     monkeypatch.setattr(data_service, "date", FakeDate)
     monkeypatch.setattr(data_service, "AkshareProvider", FakeAkshareProvider)
 
-    result = DataService(paths.database_path).update_daily()
+    result = DataService(paths.database_path, enable_concepts=False).update_daily()
 
     assert result == {"rows": 0, "date": "2026-06-05", "status": "latest"}
     assert len(KlineRepo(paths.database_path).get_klines("600519")) == 1
@@ -525,7 +523,7 @@ def test_update_daily_uses_previous_weekday_as_snapshot_date_on_weekend(tmp_path
     monkeypatch.setattr(data_service, "date", FakeDate)
     monkeypatch.setattr(data_service, "AkshareProvider", FakeAkshareProvider)
 
-    result = DataService(paths.database_path).update_daily()
+    result = DataService(paths.database_path, enable_concepts=False).update_daily()
     df = KlineRepo(paths.database_path).get_klines("600519")
 
     assert result == {"rows": 1, "date": "2026-06-05", "status": "updated"}
@@ -570,7 +568,7 @@ def test_update_daily_falls_back_to_per_stock_when_akshare_is_blocked(tmp_path: 
     monkeypatch.setattr(data_service, "AkshareProvider", FakeAkshareProvider)
     monkeypatch.setattr(data_service, "BaostockProvider", FakeBaostockProvider)
 
-    result = DataService(paths.database_path).update_daily(
+    result = DataService(paths.database_path, enable_concepts=False).update_daily(
         on_fallback=lambda start, end: fallback_called.append((start, end))
     )
     df = KlineRepo(paths.database_path).get_klines("600519")

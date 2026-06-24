@@ -5,7 +5,7 @@ import sys
 
 
 def build_parser() -> argparse.ArgumentParser:
-    from . import cmd_alert, cmd_config, cmd_data, cmd_find, cmd_hold, cmd_record, cmd_watch
+    from . import cmd_alert, cmd_concept, cmd_config, cmd_data, cmd_find, cmd_hold, cmd_record, cmd_watch
 
     parser = argparse.ArgumentParser(prog="st", description="StockTools A股中长线 CLI 工具")
     subparsers = parser.add_subparsers(dest="command")
@@ -16,6 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     cmd_watch.register(subparsers)
     cmd_hold.register(subparsers)
     cmd_alert.register(subparsers)
+    cmd_concept.register(subparsers)
     sp_tui = subparsers.add_parser("tui", help="启动 TUI 界面")
     sp_tui.set_defaults(func=lambda _args: _launch_tui())
     return parser

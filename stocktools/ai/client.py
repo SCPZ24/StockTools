@@ -17,12 +17,19 @@ class LLMClient:
         self.model_name: str = config["model_name"]
         self._client = OpenAI(base_url=config["base_url"], api_key=config["api_key"], timeout=timeout)
 
-    def invoke(self, messages: list[dict[str, str]], temperature: float = 0.2) -> str:
-        response = self._client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=temperature,
-            stream=False,
-        )
+    def invoke(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 0.2,
+        response_format: dict | None = None,
+    ) -> str:
+        kwargs = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": False,
+        }
+        if response_format is not None:
+            kwargs["response_format"] = response_format
+        response = self._client.chat.completions.create(**kwargs)
         return response.choices[0].message.content or ""
-

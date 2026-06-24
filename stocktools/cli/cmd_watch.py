@@ -12,7 +12,11 @@ def register(subparsers) -> None:
 
 
 def handle(args):
-    rows = [r.__dict__ for r in WatchService(db_path()).analyze(args.code)]
+    rows = [r.__dict__ for r in WatchService(db_path()).analyze(args.code, on_progress=_progress)]
     print_rows(rows, "没有可分析的关注股票。")
     return 0
 
+
+def _progress(event: dict) -> None:
+    if event.get("type") == "sample":
+        print(f"{event['code']} 第{event['round']}轮 {event['done']}/{event['total']} 路完成")

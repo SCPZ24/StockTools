@@ -13,7 +13,7 @@ def register(subparsers) -> None:
 
 def handle(args):
     service = AlertService(db_path())
-    results = service.analyze(args.code)
+    results = service.analyze(args.code, on_progress=_progress)
     rows = [r.__dict__ for r in results]
     print_rows(rows, "没有可分析的持仓。")
     for result in results:
@@ -24,3 +24,7 @@ def handle(args):
                 print(f"{result.code} 已写入。")
     return 0
 
+
+def _progress(event: dict) -> None:
+    if event.get("type") == "sample":
+        print(f"{event['code']} 第{event['round']}轮 {event['done']}/{event['total']} 路完成")

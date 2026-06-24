@@ -14,6 +14,7 @@ def register(subparsers) -> None:
     init = subparsers.add_parser("init", help="初始化历史行情")
     init.set_defaults(func=handle_init)
     update = subparsers.add_parser("update", help="更新当日行情")
+    update.add_argument("--force", action="store_true", help="盘中也强制运行更新")
     update.set_defaults(func=handle_update)
     cron = subparsers.add_parser("cron", help="管理自动更新")
     actions = cron.add_subparsers(dest="cron_cmd", required=True)
@@ -26,8 +27,13 @@ def register(subparsers) -> None:
 
 
 def handle_init(args: argparse.Namespace) -> int:
+    Paths.resolve().init_databases()
     result = DataService(db_path()).init_history()
-    print(f"初始化完成：扫描 {result['stocks']} 只，写入 {result['rows']} 条。")
+    concept = result.get("concept") or {}
+    concept_text = ""
+    if concept and concept.get("status") != "skipped":
+        concept_text = f" 概念：{concept.get('concepts', 0)} 个，K线 {concept.get('kline_rows', 0)} 条，榜单 {concept.get('hotspot_rows', 0)} 条。"
+    print(f"初始化完成：扫描 {result['stocks']} 只，写入 {result['rows']} 条。{concept_text}")
     return 0
 
 
@@ -36,7 +42,11 @@ def handle_update(args: argparse.Namespace) -> int:
         span = end if start == end else f"{start} ~ {end}"
         print(f"用 baostock 逐只补齐 {span}（多日缺口或 akshare 不可用，约 5000 次请求）：")
 
-    result = DataService(db_path()).update_daily(on_fallback=notify_fallback)
+    Paths.resolve().init_databases()
+    result = DataService(db_path()).update_daily(on_fallback=notify_fallback, force=args.force)
+    if result.get("status") == "blocked_intraday":
+        print("当前处于 A 股交易时段，盘中快照会污染日线排名；如确需运行，请加 --force。")
+        return 1
     if result.get("status") == "latest":
         print(f"交易数据未更新，已是最新交易日 {result['date']}，写入 0 条。")
         return 0

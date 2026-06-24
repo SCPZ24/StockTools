@@ -162,6 +162,10 @@ def test_all_documented_command_groups_expose_help(tmp_path: Path):
         ["hold", "list", "--help"],
         ["hold", "history", "--help"],
         ["alert", "--help"],
+        ["concept", "--help"],
+        ["concept", "top", "--help"],
+        ["concept", "hot", "--help"],
+        ["concept", "show", "--help"],
     ]
     for args in help_commands:
         result = run_cli(["--help"] if not args else args, home)

@@ -2,19 +2,12 @@ from __future__ import annotations
 
 from datetime import date
 import math
-import warnings
-
-warnings.filterwarnings("ignore", message=r"urllib3 .* doesn't match a supported version!")
-import requests
 
 import pandas as pd
 
+from .eastmoney_session import EASTMONEY_CLIST_URLS, EastmoneySession
 
-EASTMONEY_SPOT_URLS = [
-    "https://82.push2.eastmoney.com/api/qt/clist/get",
-    "https://push2.eastmoney.com/api/qt/clist/get",
-    "https://40.push2.eastmoney.com/api/qt/clist/get",
-]
+
 EASTMONEY_SPOT_PARAMS = {
     "pn": "1",
     "pz": "100",
@@ -27,13 +20,12 @@ EASTMONEY_SPOT_PARAMS = {
     "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048",
     "fields": "f2,f5,f12,f14,f15,f16,f17",
 }
-EASTMONEY_HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Referer": "https://quote.eastmoney.com/center/gridlist.html",
-}
 
 
 class AkshareProvider:
+    def __init__(self, session: EastmoneySession | None = None):
+        self.session = session or EastmoneySession(EASTMONEY_CLIST_URLS)
+
     def fetch_daily_all(self, trade_date: date | None = None) -> list[dict]:
         rows = []
         row_date = (trade_date or date.today()).isoformat()
@@ -57,33 +49,13 @@ class AkshareProvider:
         return rows
 
     def _fetch_spot_records(self) -> list[dict]:
-        last_error = None
-        for url in EASTMONEY_SPOT_URLS:
-            for trust_env in (True, False):
-                session = requests.Session()
-                session.trust_env = trust_env
-                try:
-                    return self._fetch_spot_records_from_url(session, url)
-                except requests.RequestException as exc:
-                    last_error = exc
-                    continue
-        if last_error is not None:
-            raise RuntimeError(
-                "Eastmoney 行情请求失败：已尝试系统环境代理、直连以及备用 host；"
-                f"最后错误：{last_error}。请检查 HTTP_PROXY/HTTPS_PROXY 代理设置或当前网络是否能访问 push2.eastmoney.com。"
-            ) from last_error
-        return []
-
-    def _fetch_spot_records_from_url(self, session: requests.Session, url: str) -> list[dict]:
         params = EASTMONEY_SPOT_PARAMS.copy()
         records = []
         page = 1
         total_pages = None
         while total_pages is None or page <= total_pages:
             params["pn"] = str(page)
-            response = session.get(url, params=params, timeout=15, headers=EASTMONEY_HEADERS)
-            response.raise_for_status()
-            payload = response.json()
+            payload = self.session.get_json(params)
             data = payload.get("data") or {}
             page_records = data.get("diff") or []
             if not page_records:
