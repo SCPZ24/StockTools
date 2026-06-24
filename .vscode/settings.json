@@ -1,0 +1,10 @@
+{
+  "python.analysis.typeCheckingMode": "off",
+  "python.analysis.extraPaths": [
+    "."
+  ],
+  "python.analysis.diagnosticMode": "openFilesOnly",
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingTypeStubs": "none"
+  }
+}
