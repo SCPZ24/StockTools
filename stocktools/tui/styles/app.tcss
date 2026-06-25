@@ -223,6 +223,29 @@ HistoryModal {
 
 /* ── Tab widgets ──────────────────────────────────────── */
 
-WatchlistTab, HoldingsTab, ScanTab {
+WatchlistTab, HoldingsTab, ScanTab, HotspotTab {
     background: transparent;
+}
+
+#hotspot-content {
+    height: 1fr;
+    background: transparent;
+    padding: 0 1;
+}
+
+#hotspot-title {
+    height: 1;
+    background: transparent;
+}
+
+#hotspot-rankings {
+    height: 1fr;
+    background: transparent;
+}
+
+#hotspot-summary {
+    height: auto;
+    max-height: 6;
+    background: transparent;
+    padding: 1 0 0 0;
 }

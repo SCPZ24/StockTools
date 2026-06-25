@@ -16,12 +16,13 @@ from stocktools.services.find_service import FindService
 from stocktools.services.hold_service import HoldService
 from stocktools.services.record_service import RecordService
 from stocktools.tui.screens.holdings import HoldingsTab, HistoryModal
+from stocktools.tui.screens.hotspot import HotspotTab
 from stocktools.tui.screens.scan import ScanTab
 from stocktools.tui.screens.watchlist import WatchlistTab
 from stocktools.tui.widgets.input_modal import InputModal
 
 
-TAB_NAMES = ["关注", "持仓", "扫描"]
+TAB_NAMES = ["关注", "持仓", "扫描", "热点"]
 
 
 def _validate_price(value: str) -> str | None:
@@ -100,6 +101,7 @@ class StockToolsApp(App):
         self._record_svc = RecordService(db)
         self._hold_svc = HoldService(db)
         self._find_svc = FindService(db)
+        self._concept_svc = None
         self._kline_repo = KlineRepo(db)
         self._watch_svc = None
         self._alert_svc = None
@@ -118,12 +120,19 @@ class StockToolsApp(App):
             self._alert_svc = AlertService(self._db)
         return self._alert_svc
 
+    def _get_concept_svc(self):
+        if self._concept_svc is None:
+            from stocktools.services.concept_service import ConceptService
+            self._concept_svc = ConceptService(self._db, provider=None)
+        return self._concept_svc
+
     def compose(self) -> ComposeResult:
         yield Static("", id="hint-bar")
         yield Static("", id="tab-bar")
         yield WatchlistTab()
         yield HoldingsTab()
         yield ScanTab()
+        yield HotspotTab()
         yield Static("", id="status-bar")
 
     def on_mount(self) -> None:
@@ -131,6 +140,7 @@ class StockToolsApp(App):
             self.query_one(WatchlistTab),
             self.query_one(HoldingsTab),
             self.query_one(ScanTab),
+            self.query_one(HotspotTab),
         ]
         self._switch_tab(0)
 

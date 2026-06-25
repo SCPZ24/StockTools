@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
 from datetime import date, timedelta
 from pathlib import Path
 
-from stocktools.data.providers.eastmoney_concept_provider import EastmoneyConceptProvider
+from stocktools.data.providers.ths_concept_provider import ThsConceptProvider
 from stocktools.data.repos.concept_hotspot_repo import ConceptHotspotRepo
 from stocktools.data.repos.concept_index_repo import ConceptIndexRepo
 from stocktools.data.repos.concept_kline_repo import ConceptKlineRepo
@@ -11,33 +13,32 @@ from stocktools.scanners.ma_alignment import MAAlignmentScanner
 
 
 _DEFAULT_PROVIDER = object()
+KLINE_WORKERS = 8
 
 
 class ConceptService:
-    def __init__(self, db_path: Path | str, provider: EastmoneyConceptProvider | None | object = _DEFAULT_PROVIDER):
+    def __init__(self, db_path: Path | str, provider: object | None = _DEFAULT_PROVIDER):
         self.db_path = db_path
         self.index_repo = ConceptIndexRepo(db_path)
         self.kline_repo = ConceptKlineRepo(db_path)
         self.hotspot_repo = ConceptHotspotRepo(db_path)
-        self.provider = EastmoneyConceptProvider() if provider is _DEFAULT_PROVIDER else provider
+        if provider is _DEFAULT_PROVIDER:
+            # 离线模式（CI / 确定性测试 / 无网环境）下不触网，全部走库内数据。
+            provider = None if os.environ.get("STOCKTOOLS_OFFLINE") else ThsConceptProvider()
+        self.provider = provider
 
     def sync_index(self) -> dict:
         if self.provider is None:
             return {"inserted": 0, "renamed": 0, "deactivated": 0}
         concepts = self.provider.fetch_concepts()
-        return self.index_repo.sync(concepts)
+        return self.index_repo.sync(concepts, deactivate_missing=self._deactivate_missing())
 
     def init_history(self, start: str, end: str, on_progress=None) -> dict:
         if self.provider is None:
-            return {"concepts": 0, "kline_rows": 0, "hotspot_rows": 0}
+            return {"status": "skipped", "concepts": 0, "kline_rows": 0, "hotspot_rows": 0}
         concepts = self.provider.fetch_concepts()
-        self.index_repo.sync(concepts)
-        kline_rows = 0
-        for idx, concept in enumerate(concepts, start=1):
-            rows = self.provider.fetch_kline(concept["code"], start, end)
-            kline_rows += self.kline_repo.bulk_upsert(rows)
-            if on_progress is not None:
-                on_progress(idx, len(concepts), concept["code"])
+        self.index_repo.sync(concepts, deactivate_missing=self._deactivate_missing())
+        kline_rows = self._fetch_and_store_klines(concepts, start, end, on_progress)
         hotspot_rows = self.hotspot_repo.replace_many(self.kline_repo.rebuild_daily_top10(start, end))
         return {"concepts": len(concepts), "kline_rows": kline_rows, "hotspot_rows": hotspot_rows}
 
@@ -45,7 +46,7 @@ class ConceptService:
         if self.provider is None:
             return {"status": "skipped", "concepts": 0, "kline_rows": 0, "hotspot_rows": 0}
         concepts = self.provider.fetch_concepts()
-        sync = self.index_repo.sync(concepts)
+        sync = self.index_repo.sync(concepts, deactivate_missing=self._deactivate_missing())
         latest = self.hotspot_repo.get_latest_date()
         if latest and latest >= end:
             return {"status": "latest", "sync": sync, "concepts": len(concepts), "kline_rows": 0, "hotspot_rows": 0}
@@ -55,7 +56,9 @@ class ConceptService:
             if latest
             else end
         )
-        if start == end:
+        single_day_update = start == end
+        has_spot_ranking = self._has_spot_ranking(concepts)
+        if single_day_update and has_spot_ranking:
             hotspot_rows = self.hotspot_repo.replace_date(end, concepts)
             return {
                 "status": "updated",
@@ -65,24 +68,65 @@ class ConceptService:
                 "hotspot_rows": hotspot_rows,
             }
 
-        kline_rows = 0
-        for concept in self.index_repo.list_active():
-            kline_rows += self.kline_repo.bulk_upsert(self.provider.fetch_kline(concept["code"], start, end))
-        hotspot_rows = self.hotspot_repo.replace_many(self.kline_repo.rebuild_daily_top10(start, end))
-        return {
-            "status": "backfilled",
+        fetch_start = start
+        if single_day_update and not has_spot_ranking:
+            fetch_start = (date.fromisoformat(end) - timedelta(days=10)).isoformat()
+        kline_rows = self._fetch_and_store_klines(self.index_repo.list_active(), fetch_start, end)
+        hotspot_rows = self.hotspot_repo.replace_many(self.kline_repo.rebuild_daily_top10(fetch_start, end))
+        result = {
+            "status": "updated" if single_day_update else "backfilled",
             "sync": sync,
             "concepts": len(concepts),
             "kline_rows": kline_rows,
             "hotspot_rows": hotspot_rows,
-            "start": start,
         }
+        if not single_day_update:
+            result["start"] = start
+        return result
+
+    @staticmethod
+    def _has_spot_ranking(concepts: list[dict]) -> bool:
+        for concept in concepts:
+            try:
+                float(concept["pct_chg"])
+            except (KeyError, TypeError, ValueError):
+                return False
+        return bool(concepts)
+
+    def _fetch_and_store_klines(self, concepts: list[dict], start: str, end: str, on_progress=None) -> int:
+        if not concepts:
+            return 0
+        total = len(concepts)
+        kline_rows = 0
+        errors: list[dict] = []
+        workers = min(KLINE_WORKERS, total)
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(self.provider.fetch_kline, concept["code"], start, end): concept
+                for concept in concepts
+            }
+            for idx, future in enumerate(as_completed(futures), start=1):
+                concept = futures[future]
+                try:
+                    rows = future.result()
+                    kline_rows += self.kline_repo.bulk_upsert(rows)
+                except Exception as exc:
+                    errors.append({"code": concept["code"], "error": str(exc)})
+                if on_progress is not None:
+                    on_progress(idx, total, concept["code"])
+        if errors:
+            sample = "；".join(f"{item['code']}: {item['error']}" for item in errors[:5])
+            raise RuntimeError(f"同花顺概念K线抓取失败 {len(errors)}/{total}：{sample}")
+        return kline_rows
+
+    def _deactivate_missing(self) -> bool:
+        return bool(getattr(self.provider, "deactivate_missing", True))
 
     def top(self, limit: int = 20, all_: bool = False) -> list[dict]:
         if self.provider is not None:
-            try:
-                concepts = self.provider.fetch_concepts()
-                self.index_repo.sync(concepts)
+            concepts = self.provider.fetch_concepts()
+            self.index_repo.sync(concepts, deactivate_missing=self._deactivate_missing())
+            if self._has_spot_ranking(concepts):
                 ranked = sorted(concepts, key=lambda r: (-float(r["pct_chg"]), r["code"]))
                 rows = ranked if all_ else ranked[:limit]
                 return [
@@ -97,8 +141,6 @@ class ConceptService:
                     }
                     for idx, row in enumerate(rows)
                 ]
-            except Exception:
-                pass
         rows = self.hotspot_repo.get_latest_rows(None if all_ else limit)
         return [
             {

@@ -9,7 +9,7 @@ class ConceptIndexRepo:
     def __init__(self, db_path: Path | str):
         self.db_path = db_path
 
-    def sync(self, concepts: list[dict]) -> dict:
+    def sync(self, concepts: list[dict], deactivate_missing: bool = True) -> dict:
         incoming = {item["code"]: item["name"] for item in concepts}
         inserted = renamed = deactivated = 0
         with connect(self.db_path) as conn:
@@ -33,7 +33,11 @@ class ConceptIndexRepo:
                     """,
                     (code, name),
                 )
-            stale = [code for code, row in existing.items() if code not in incoming and int(row["active"]) == 1]
+            stale = [
+                code
+                for code, row in existing.items()
+                if deactivate_missing and code not in incoming and int(row["active"]) == 1
+            ]
             if stale:
                 deactivated = len(stale)
                 conn.executemany("UPDATE concept_index SET active = 0 WHERE code = ?", [(code,) for code in stale])

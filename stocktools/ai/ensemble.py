@@ -11,10 +11,16 @@ import pandas as pd
 
 from .alert_analyst import AlertAnalyst
 from .models import AlertAnalysis, WatchAnalysis
-from .watch_analyst import WatchAnalyst
+from .watch_analyst import WatchAnalyst, _invoke_json, _loads_json
 
 
 ProgressCallback = Callable[[dict], None]
+
+_ARBITER_SYSTEM = """\
+你是一位严谨的投资仲裁分析师。下面是多位分析师对同一标的的独立分析。
+请把它们综合成一段连贯、不重复的中文总体概要，聚焦共识与关键依据；如存在分歧请简要点明。
+只输出 JSON，不要 markdown：{"summary": "一段总体概要"}\
+"""
 
 
 class WatchEnsemble:
@@ -76,7 +82,7 @@ class WatchEnsemble:
         return votes
 
     def _result(self, code: str, conclusion: str, votes: list[WatchAnalysis], confidence: float, degraded: bool) -> WatchAnalysis:
-        content = _summarize_votes(votes)
+        content = _make_summary(self.analyst, votes, conclusion, degraded)
         return WatchAnalysis(
             code=code,
             conclusion=conclusion,
@@ -109,10 +115,13 @@ class AlertEnsemble:
             votes = self._collect_votes(holding, klines, round_no, on_progress, user_prompt)
             if votes:
                 last_votes = votes
-            result = self._consensus(holding["code"], votes)
-            if result and not result.degraded:
-                return result
-        return self._consensus(holding["code"], last_votes, force_degraded=True) or AlertAnalysis(
+            decision = self._decide(votes)
+            if decision and not decision["degraded"]:
+                return self._build(holding["code"], votes, decision)
+        decision = self._decide(last_votes, force_degraded=True)
+        if decision:
+            return self._build(holding["code"], last_votes, decision)
+        return AlertAnalysis(
             code=holding["code"],
             conclusion="止损：None；止盈：None",
             content="没有获得有效 AI 票。",
@@ -149,7 +158,8 @@ class AlertEnsemble:
                         on_progress({"type": "sample", "code": holding["code"], "round": round_no, "done": min(len(votes), self.samples), "total": self.samples})
         return votes
 
-    def _consensus(self, code: str, votes: list[AlertAnalysis], force_degraded: bool = False) -> AlertAnalysis | None:
+    def _decide(self, votes: list[AlertAnalysis], force_degraded: bool = False) -> dict | None:
+        """纯代码裁定中位数与共识强度，不调用任何 LLM（避免每轮重复仲裁）。"""
         if not votes:
             return None
         stop_values = [float(v.suggested_stop_loss) for v in votes if v.suggested_stop_loss is not None]
@@ -162,15 +172,20 @@ class AlertEnsemble:
         take_count = _within_tol(take_values, take, self.tolerance)
         degraded = force_degraded or stop_count < 4 or take_count < 4
         confidence = min(stop_count, take_count) / self.samples if self.samples else 0.0
+        return {"stop": round(stop, 2), "take": round(take, 2), "degraded": degraded, "confidence": round(confidence, 2)}
+
+    def _build(self, code: str, votes: list[AlertAnalysis], decision: dict) -> AlertAnalysis:
+        conclusion = f"止损：{decision['stop']}；止盈：{decision['take']}"
+        content = _make_summary(self.analyst, votes, conclusion, decision["degraded"])
         return AlertAnalysis(
             code=code,
-            conclusion=f"止损：{round(stop, 2)}；止盈：{round(take, 2)}",
-            content=_summarize_votes(votes),
+            conclusion=conclusion,
+            content=content,
             analysis_date=date.today().isoformat(),
-            suggested_stop_loss=round(stop, 2),
-            suggested_take_profit=round(take, 2),
-            confidence=round(confidence, 2),
-            degraded=degraded,
+            suggested_stop_loss=decision["stop"],
+            suggested_take_profit=decision["take"],
+            confidence=decision["confidence"],
+            degraded=decision["degraded"],
             votes=json.dumps([vote.__dict__ for vote in votes], ensure_ascii=False),
         )
 
@@ -182,6 +197,37 @@ def _top_label(votes: list[WatchAnalysis]) -> tuple[str | None, int]:
     priority = {"buy": 0, "hold": 1, "wait": 2, "sell": 3}
     label = sorted(counter, key=lambda item: (-counter[item], priority.get(item, 99), item))[0]
     return label, counter[label]
+
+
+def _make_summary(analyst, votes: list, decision: str, degraded: bool) -> str:
+    """共识/终态时由仲裁 agent 合成一段总体概要；无可用 client 或失败时回退为逐条拼接。"""
+    if not votes:
+        return "没有获得有效 AI 票。"
+    client = getattr(analyst, "client", None)
+    if client is not None:
+        try:
+            return _arbitrate(client, votes, decision, degraded)
+        except Exception:
+            pass
+    return _summarize_votes(votes)
+
+
+def _arbitrate(client, votes: list, decision: str, degraded: bool) -> str:
+    analyses = "\n".join(f"{idx}. {getattr(vote, 'content', '')}" for idx, vote in enumerate(votes, start=1))
+    note = "（分析师之间存在分歧，未达成强共识，请在概要中点明分歧并提示置信度偏低）" if degraded else ""
+    user = f"综合裁定结论：{decision}{note}\n各独立分析：\n{analyses}\n请输出 JSON。"
+    raw = _invoke_json(
+        client,
+        [
+            {"role": "system", "content": _ARBITER_SYSTEM},
+            {"role": "user", "content": user},
+        ],
+    )
+    payload = _loads_json(raw)
+    summary = str(payload.get("summary", "")).strip() if isinstance(payload, dict) else ""
+    if not summary:
+        raise ValueError("仲裁未返回 summary")
+    return summary
 
 
 def _summarize_votes(votes: list[WatchAnalysis] | list[AlertAnalysis]) -> str:

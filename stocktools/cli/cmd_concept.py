@@ -10,8 +10,8 @@ from stocktools.services.concept_service import ConceptService
 
 def valid_concept_code(value: str) -> str:
     code = value.upper()
-    if not re.fullmatch(r"BK\d+", code):
-        raise argparse.ArgumentTypeError("概念代码必须形如 BK1128")
+    if not re.fullmatch(r"THS\d+", code):
+        raise argparse.ArgumentTypeError("概念代码必须形如 THS301558")
     return code
 
 

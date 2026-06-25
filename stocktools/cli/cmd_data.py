@@ -29,10 +29,7 @@ def register(subparsers) -> None:
 def handle_init(args: argparse.Namespace) -> int:
     Paths.resolve().init_databases()
     result = DataService(db_path()).init_history()
-    concept = result.get("concept") or {}
-    concept_text = ""
-    if concept and concept.get("status") != "skipped":
-        concept_text = f" 概念：{concept.get('concepts', 0)} 个，K线 {concept.get('kline_rows', 0)} 条，榜单 {concept.get('hotspot_rows', 0)} 条。"
+    concept_text = _concept_text(result.get("concept"), "初始化")
     print(f"初始化完成：扫描 {result['stocks']} 只，写入 {result['rows']} 条。{concept_text}")
     return 0
 
@@ -48,13 +45,21 @@ def handle_update(args: argparse.Namespace) -> int:
         print("当前处于 A 股交易时段，盘中快照会污染日线排名；如确需运行，请加 --force。")
         return 1
     if result.get("status") == "latest":
-        print(f"交易数据未更新，已是最新交易日 {result['date']}，写入 0 条。")
+        print(f"交易数据未更新，已是最新交易日 {result['date']}，写入 0 条。{_concept_text(result.get('concept'), '更新')}")
         return 0
     if result.get("status") == "fallback":
-        print(f"回退更新完成：日期 {result['date']}，扫描 {result['stocks']} 只，写入 {result['rows']} 条。")
+        print(f"回退更新完成：日期 {result['date']}，扫描 {result['stocks']} 只，写入 {result['rows']} 条。{_concept_text(result.get('concept'), '更新')}")
         return 0
-    print(f"更新完成：日期 {result['date']}，写入 {result['rows']} 条。")
+    print(f"更新完成：日期 {result['date']}，写入 {result['rows']} 条。{_concept_text(result.get('concept'), '更新')}")
     return 0
+
+
+def _concept_text(concept: dict | None, action: str) -> str:
+    if not concept or concept.get("status") == "skipped":
+        return ""
+    if concept.get("status") == "error":
+        return f" 概念{action}失败：{concept.get('error', '未知错误')}"
+    return f" 概念：{concept.get('concepts', 0)} 个，K线 {concept.get('kline_rows', 0)} 条，榜单 {concept.get('hotspot_rows', 0)} 条。"
 
 
 def handle_cron_set(args: argparse.Namespace) -> int:
