@@ -60,8 +60,7 @@ StockTools（命令行名：`st`）是一个面向 A 股中长线投资者的终
 |------|------|
 | `st find box` | 低位箱体整理扫描 |
 | `st find channel` | 上升通道扫描 |
-| `st find volume_absorb` | 爆量吸筹扫描 |
-| `st find independent` | 独立行情扫描 |
+| `st find ma_alignment` | MA均线多头排列 |
 | `st find <scanner> --csv <path>` | 将扫描结果导出为 CSV ，不传path默认在工作区|
 
 - 数据源：本地sqlite（日线）
@@ -288,5 +287,4 @@ CREATE TABLE model_config (
 | M2 | 基础扫描闭环 | `st find box` / `st find channel` 可用，扫描器通过 service 批量执行 |
 | M3 | 关注池 + 持仓管理 | `st record` + `st hold in/out/list/history` 可用 |
 | M4 | DeepSeek 集成 | `st watch` + `st alert` 可用，AI 结果写入 `ai_logs` |
-| M5 | 补齐扫描器 | `st find volume_absorb` + `st find independent` 可用 |
 | M6 | TUI | 后续补充 TUI 需求后实现 |

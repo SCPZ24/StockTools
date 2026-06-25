@@ -22,6 +22,8 @@ import stocktools.services.find_service as find_service_module
 from stocktools.ai.alert_analyst import AlertAnalyst
 from stocktools.ai.client import LLMClient
 from stocktools.data.repos.ai_logs_repo import AiLogsRepo
+from stocktools.data.repos.concept_hotspot_repo import ConceptHotspotRepo
+from stocktools.data.repos.concept_index_repo import ConceptIndexRepo
 from stocktools.data.repos.holdings_repo import HoldingsRepo
 from stocktools.data.repos.kline_repo import KlineRepo
 from stocktools.data.repos.watchlist_repo import WatchlistRepo
@@ -32,13 +34,13 @@ from stocktools.services.data_service import DataService
 from stocktools.services.find_service import FindService
 from stocktools.services.record_service import RecordService
 from stocktools.services.watch_service import WatchService
-from stocktools.tui.app import StockToolsApp, _ST_THEME
+from stocktools.tui.app import StockToolsApp, TAB_NAMES, _ST_THEME
 from stocktools.tui.screens.holdings import HoldingsTab
 from stocktools.tui.screens.scan import ScanTab
 from stocktools.tui.screens.watchlist import WatchlistTab
 from stocktools.tui.stock_style import stock_name_cell
 from stocktools.tui.widgets.stock_table import StockDataTable
-from textual.widgets import DataTable
+from textual.widgets import DataTable, Static
 
 
 def make_rows(code: str = "600519", name: str = "贵州茅台", days: int = 140) -> list[dict]:
@@ -283,35 +285,33 @@ def test_connect_readonly_opens_database_as_immutable_uri(tmp_path: Path, monkey
 
 
 def test_scanners_match_synthetic_data():
-    # 爆量吸筹: a stock that fell from ~10 to a flat low base ~7, then in the
-    # last few sessions absorbs heavy volume on up-days while price stays low.
-    vol_rows = make_rows(days=130)
-    for i, row in enumerate(vol_rows):
-        if i < 60:
-            close = 10.0 - (i / 60) * 3.0  # decline 10 -> 7
+    # 低位箱体: stock declines from ~14 to form a box near 7-8.2 (height ~17%),
+    # with touches at top and bottom, current price near top of the box.
+    box_rows = make_rows(days=130)
+    for i, row in enumerate(box_rows):
+        if i < 95:
+            # decline phase: 14 -> 10
+            close = 14.0 - (i / 95) * 4.0
+            row["high"] = close + 0.3
+            row["low"] = close - 0.3
         else:
-            close = 7.0  # flat low base
-        volume = 1000
-        if i >= 125:  # last 5 days: explosive volume, contained price
-            close = 7.0 + (i - 124) * 0.06
-            volume = 3500
+            # last 35 bars including 25-bar box
+            t = i - 95
+            # oscillate between 7 and 8.2
+            close = 7.6 + 0.6 * (1 if t % 7 < 3 else -1)
+            if t % 8 == 0:
+                close = 7.05  # touch bottom
+            if t % 8 == 4:
+                close = 8.15  # touch top
+            if t >= 33:  # last 2 bars near top
+                close = 8.0
+            row["high"] = close + 0.15
+            row["low"] = close - 0.15
         row["close"] = round(close, 2)
         row["open"] = round(close - 0.05, 2)
-        row["high"] = round(close + 0.1, 2)
-        row["low"] = round(close - 0.1, 2)
-        row["volume"] = volume
-    vol_df = pd.DataFrame(vol_rows)
-    assert get_scanner("volume_absorb").detect(vol_df).matched
-
-    strong_rows = make_rows(days=140)
-    for i, row in enumerate(strong_rows):
-        row["close"] = 10 + i * 0.08
-        row["open"] = row["close"] - 0.02
-        row["high"] = row["close"] + 0.1
-        row["low"] = row["close"] - 0.1
-        row["volume"] = 500 if i >= 120 else 2000
-    strong_df = pd.DataFrame(strong_rows)
-    assert get_scanner("independent").detect(strong_df, baseline_return=0.05).matched
+        row["volume"] = 1200 if row["close"] >= row["open"] else 800
+    box_df = pd.DataFrame(box_rows)
+    assert get_scanner("box").detect(box_df).matched
 
 
 def test_baostock_list_stocks_falls_back_from_empty_non_trading_day(monkeypatch):
@@ -707,6 +707,82 @@ def test_tui_stock_tables_share_stock_rendering_layer(tmp_path: Path, monkeypatc
     asyncio.run(run_check())
 
 
+def test_tui_hotspot_tab_renders_daily_rankings_and_empty_hot_summary(tmp_path: Path, monkeypatch):
+    paths = init_paths(tmp_path, monkeypatch)
+    concepts = [{"code": f"BK{i:04d}", "name": f"概念{i}"} for i in range(1, 13)]
+    ConceptIndexRepo(paths.database_path).sync(concepts)
+    hotspot = ConceptHotspotRepo(paths.database_path)
+    hotspot.replace_date(
+        "2026-06-23",
+        [{"code": item["code"], "pct_chg": 12 - idx} for idx, item in enumerate(concepts)],
+    )
+    hotspot.replace_date(
+        "2026-06-24",
+        [{"code": item["code"], "pct_chg": 6 + idx} for idx, item in enumerate(concepts)],
+    )
+
+    async def run_check():
+        app = StockToolsApp()
+        async with app.run_test():
+            assert TAB_NAMES == ["关注", "持仓", "扫描", "热点"]
+            app._switch_tab(3)
+            table = app.query_one("#hotspot-rankings", DataTable)
+            summary = app.query_one("#hotspot-summary", Static)
+
+            assert table.row_count == 20
+            first_row = table.get_row_at(0)
+            assert str(first_row[0]) == "2026-06-24"
+            assert str(first_row[1]) == "1"
+            assert "概念12" in str(first_row[2])
+            assert "无" in str(summary.render())
+
+    asyncio.run(run_check())
+
+
+def test_tui_hotspot_tab_explains_when_concept_data_is_uninitialized(tmp_path: Path, monkeypatch):
+    init_paths(tmp_path, monkeypatch)
+
+    async def run_check():
+        app = StockToolsApp()
+        async with app.run_test():
+            app._switch_tab(3)
+            table = app.query_one("#hotspot-rankings", DataTable)
+            summary = app.query_one("#hotspot-summary", Static)
+
+            assert table.row_count == 1
+            assert table.get_row_at(0)[0] == "无数据"
+            assert "概念数据未初始化" in str(summary.render())
+
+    asyncio.run(run_check())
+
+
+def test_tui_hotspot_tab_renders_short_hot_concepts(tmp_path: Path, monkeypatch):
+    paths = init_paths(tmp_path, monkeypatch)
+    concepts = [{"code": "BK0001", "name": "机器人"}, {"code": "BK0002", "name": "低空经济"}]
+    ConceptIndexRepo(paths.database_path).sync(concepts)
+    hotspot = ConceptHotspotRepo(paths.database_path)
+    for idx, day in enumerate(["2026-06-22", "2026-06-23", "2026-06-24"]):
+        hotspot.replace_date(
+            day,
+            [
+                {"code": "BK0001", "pct_chg": 4.0 + idx},
+                {"code": "BK0002", "pct_chg": 1.0 + idx},
+            ],
+        )
+
+    async def run_check():
+        app = StockToolsApp()
+        async with app.run_test():
+            app._switch_tab(3)
+            summary = str(app.query_one("#hotspot-summary", Static).render())
+
+            assert "机器人" in summary
+            assert "连续3天" in summary
+            assert "上榜3天/连续3天" in summary
+
+    asyncio.run(run_check())
+
+
 def test_tui_stock_tables_keep_cell_colors_under_cursor():
     table = StockDataTable()
 
@@ -719,7 +795,7 @@ def test_services_scan_record_watch_alert(tmp_path: Path, monkeypatch):
     kline.bulk_insert(make_rows("600519", "贵州茅台", 140))
 
     find = FindService(paths.database_path)
-    assert isinstance(find.scan("independent", {"baseline_return": 0.0}), list)
+    assert isinstance(find.scan("box"), list)
 
     record = RecordService(paths.database_path)
     added = record.add("600519", "观察")

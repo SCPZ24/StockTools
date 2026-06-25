@@ -235,8 +235,7 @@ st find <scanner>
 |---|---|
 | `st find box` | 低位箱体整理 |
 | `st find channel` | 上升通道 |
-| `st find volume_absorb` | 爆量吸筹 |
-| `st find independent` | 独立行情 |
+| `st find ma_alignment` | MA均线多头排列 |
 
 导出 CSV：
 
@@ -256,8 +255,6 @@ st find box --csv results/box.csv
 ```bash
 st find box --height-min 0.06 --height-max 0.45 --position-min 0.45
 st find channel --width-min 0.08 --width-max 0.35 --r-squared-min 0.75
-st find volume_absorb --vol-ratio-min 2.0
-st find independent --excess-return-min 0.15 --drawdown-max 0.25
 ```
 
 可用参数以命令帮助为准：
@@ -498,8 +495,7 @@ st init
 st update
 st find box
 st find channel
-st find volume_absorb
-st find independent
+st find ma_alignment
 ```
 
 看到值得观察的股票：

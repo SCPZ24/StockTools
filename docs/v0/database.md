@@ -70,7 +70,7 @@ CREATE INDEX idx_kline_code ON daily_kline(code);
 CREATE TABLE watchlist (
     code        TEXT    PRIMARY KEY,   -- 股票代码
     name        TEXT    NOT NULL,      -- 股票名称
-    pattern     TEXT,                  -- 识别到的形态：'box'/'channel'/'volume_absorb'/'independent'
+    pattern     TEXT,                  -- 识别到的形态：'box'/'channel'/'ma_alignment'
     note        TEXT,                  -- 用户备注
     added_at    TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),  -- 加入时间
     buy_tomorrow INTEGER NOT NULL DEFAULT 0                            -- 是否标记“明天买”：0/1

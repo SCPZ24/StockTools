@@ -10,8 +10,6 @@ if TYPE_CHECKING:
 SCANNER_CLASSES: dict[str, tuple[str, str]] = {
     "box": ("stocktools.scanners.box", "BoxScanner"),
     "channel": ("stocktools.scanners.channel", "ChannelScanner"),
-    "volume_absorb": ("stocktools.scanners.volume_absorb", "VolumeAbsorbScanner"),
-    "independent": ("stocktools.scanners.independent", "IndependentScanner"),
     "ma_alignment": ("stocktools.scanners.ma_alignment", "MAAlignmentScanner"),
 }
 

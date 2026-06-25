@@ -118,7 +118,7 @@ TUI 是 CLI 的可视化封装。用户输入 `st` （无子命令）后进入�
 左侧为扫描器选择 + 结果列表：
 
 扫描器选择区：
-- 四个扫描器按钮/选项：box / channel / volume_absorb / independent
+- 三个扫描器按钮/选项：box / channel / ma_alignment
 - 用户选中后按 Enter 或 空格 触发扫描
 
 结果列表列：

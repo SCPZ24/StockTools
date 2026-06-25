@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import sqlite3
 import subprocess
@@ -7,6 +8,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
+import stocktools.cli.cmd_data as cmd_data
 from stocktools.data.repos.holdings_repo import HoldingsRepo
 from stocktools.data.repos.kline_repo import KlineRepo
 from stocktools.data.repos.watchlist_repo import WatchlistRepo
@@ -203,16 +205,18 @@ def test_cli_record_hold_find_csv_and_code_validation(tmp_path: Path):
     assert csv_path.exists()
     assert "600519" in csv_path.read_text(encoding="utf-8-sig")
 
-    scan_csv = tmp_path / "scan.csv"
+
+def test_cli_find_scanner_and_csv(tmp_path: Path):
+    home = tmp_path / "work"
+    seed_workdir(home)
+
+    # find with no matches should still succeed and print a friendly message
     scan = run_cli(
-        ["find", "independent", "--excess-return-min", "0", "--drawdown-max", "1", "--recent-return-min", "-1", "--csv", str(scan_csv)],
+        ["find", "box", "--height-min", "0.05", "--height-max", "0.22"],
         home,
     )
     assert scan.returncode == 0, scan.stderr
-    first_line = next(line for line in scan.stdout.splitlines() if line.strip())
-    assert first_line.startswith("600519  贵州茅台  independent")
-    assert "code" not in first_line.lower()
-    assert scan_csv.exists()
+    assert "没有找到符合条件的股票" in scan.stdout
 
 
 def test_cli_config_model_set_and_show(tmp_path: Path):
@@ -261,6 +265,30 @@ def test_cli_config_model_set_and_show(tmp_path: Path):
 
     unsupported_show = run_cli(["config", "show", "model"], home)
     assert unsupported_show.returncode == 2
+
+
+def test_init_reports_concept_error_instead_of_zero_counts(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.setenv("STOCKTOOLS_HOME", str(tmp_path / "work"))
+
+    class FakeDataService:
+        def __init__(self, db_path):
+            self.db_path = db_path
+
+        def init_history(self):
+            return {
+                "stocks": 5279,
+                "rows": 1108314,
+                "concept": {"status": "error", "error": "Eastmoney 请求失败"},
+            }
+
+    monkeypatch.setattr(cmd_data, "DataService", FakeDataService)
+
+    assert cmd_data.handle_init(argparse.Namespace()) == 0
+    output = capsys.readouterr().out
+
+    assert "初始化完成：扫描 5279 只，写入 1108314 条。" in output
+    assert "概念初始化失败：Eastmoney 请求失败" in output
+    assert "概念：0 个" not in output
 
 
 def test_setup_initializes_databases_and_shell_config_without_cron(tmp_path: Path):

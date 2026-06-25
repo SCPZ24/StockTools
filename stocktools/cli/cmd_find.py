@@ -19,11 +19,6 @@ THRESHOLDS = [
     "width_max",
     "r_squared_min",
     "position_max",
-    "range_max",
-    "support_lift_min",
-    "excess_return_min",
-    "drawdown_max",
-    "recent_return_min",
 ]
 
 

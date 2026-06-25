@@ -114,8 +114,7 @@ service 层返回结构化结果，不直接打印。
 | `results.py` | 定义 `ScanResult` 数据结构 |
 | `box.py` | 低位箱体整理形态识别 |
 | `channel.py` | 上升通道形态识别 |
-| `volume_absorb.py` | 爆量吸筹形态识别 |
-| `independent.py` | 独立行情形态识别 |
+| `ma_alignment.py` | MA均线多头排列 |
 
 约束：
 - `BaseScanner` 不提供 `scan_all()`。
@@ -276,8 +275,7 @@ StockTools/
     │   ├── results.py
     │   ├── box.py
     │   ├── channel.py
-    │   ├── volume_absorb.py
-    │   └── independent.py
+    │   └── ma_alignment.py
     ├── ai/
     │   ├── __init__.py
     │   ├── client.py
